@@ -15,7 +15,8 @@ PY       ?= python3
 
 TB      := ../tb/fullchip_tb.v
 DATA    := $(wildcard ../tb/data/*.txt)
-RTL     := $(wildcard ../rtl/*.v)
+# Shared with syn/run_dc.tcl and fpga/gen_qsf.py; see rtl/filelist.txt.
+RTL     := $(addprefix ../rtl/,$(shell grep -vE '^\s*(#|$$)' ../rtl/filelist.txt))
 
 # The ungated variant swaps in the pre-optimisation mac_col / mac_8in, which
 # declare the same module names, so they drop straight in.

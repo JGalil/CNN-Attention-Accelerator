@@ -20,15 +20,15 @@
 #   report_power, which is the only way to observe the savings.
 #
 # USAGE
-#   1. Generate a SAIF from the RTL or gate-level sim (see sim/gen_saif.tcl
-#      and the $toggle_* calls added to tb/fullchip_tb.v).
+#   1. Generate a SAIF from the RTL or gate-level sim: build the testbench with
+#      -DSAIF_DUMP under a simulator implementing $toggle_* (see sim/gen_saif.md).
 #   2. dc_shell-xg-t -f run_power_saif.tcl | tee log/power_saif.log
 #-----------------------------------------------------------------------------
 
 set top_module fullchip
-set saif_file  "../sim/fullchip.saif"
+set saif_file  "../sim/build_gated/fullchip.saif"
 # Instance path of the DUT inside the testbench, as it appears in the SAIF.
-set dut_inst   "fullchip_tb/full_chip_instance"
+set dut_inst   "fullchip_tb/fullchip_instance"
 
 if {![info exists ::env(STDCELL_DB)]} {
     error "STDCELL_DB is not set - see README.md (Prerequisites)."
@@ -98,6 +98,12 @@ redirect log/${top_module}_clock_gating.rep {
     report_clock_gating -verbose
     report_clock_gating -gating_elements
 }
+
+# If a SAIF is unavailable, this is the fallback. 0.872 is measured, not
+# assumed: it is the mean fraction of cycles the mac_col register enables are
+# low on the reference workload (sim/vcd_activity.py --duty .col_en). It is the
+# field Innovus reports as "Default icg ratio: N.A." when left unset.
+#   set_default_switching_activity -input_activity 0.2 -clock_gating_ratio 0.872
 
 echo "run_power_saif.tcl completed"
 exit

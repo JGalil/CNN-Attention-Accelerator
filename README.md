@@ -4,10 +4,8 @@ An 8×8 MAC-array accelerator for self-attention inference, taped out through a
 65 nm ASIC flow as a UCSD ECE 260B project, with a low-power study covering
 clock gating, operand isolation and threshold-based compute skipping.
 
-> **Read [NOTICE.md](NOTICE.md) before making this repository public.** The
-> foundry PDK has been stripped and verified absent, but much of the module
-> skeleton is course-provided and carries an explicit "do not spread without
-> permission" header. That is unresolved and needs a decision.
+> The foundry PDK is stripped and verified absent; see [NOTICE.md](NOTICE.md)
+> for provenance and attribution.
 
 ---
 
@@ -35,7 +33,7 @@ mem_in ─► qmem ─┐
 | Datapath width | 8-bit operands, 20-bit partial sums |
 | Array | 8 columns × 8 parallel products per column |
 | Cores | 2, each with Q/K/psum memories and its own SFP |
-| Inter-core link | gray-code async FIFO + 2-flop synchronisers |
+| Inter-core link | gray-code async FIFO + 2-flop synchronisers (`clk2` for core 2) |
 | Target clock | 100 MHz (10 ns), both flows |
 
 ### Modules
@@ -45,64 +43,78 @@ mem_in ─► qmem ─┐
 | `rtl/fullchip.v` | top level: two cores + the two CDC FIFOs |
 | `rtl/core.v` | one core: memories, array, output FIFO, SFP |
 | `rtl/mac_array.v` / `mac_col.v` / `mac_8in.v` | the systolic array; gating and operand isolation live in `mac_col.v` |
-| `rtl/sfp_row.v` | absolute value, row sum, threshold skip, 8 dividers |
-| `rtl/mc_div.v` | divider wrapper (see [extensions](docs/extensions.md) §3.1) |
+| `rtl/sfp_row.v` | absolute value, row sum, runtime threshold skip, 8 dividers |
+| `rtl/seq_div.v` | sequential restoring divider, exact and short-path |
 | `rtl/async_gray_fifo.v` / `sync_mb.v` | clock-domain crossing |
 | `rtl/ofifo.v` / `fifo_depth16.v` / `fifo_mux_*.v` | output FIFO tree |
-| `rtl/sram_w16.v` | 16-entry memory model |
+| `rtl/sram_w16.v` | 16-entry memory, RAM-inferable |
 | `rtl/experimental/` | pipelined MAC variant, and the pre-optimisation baseline used for A/B |
 
 ---
 
 ## Quick start — no licence required
 
-Icarus Verilog is enough to simulate the design and to measure the power
-optimisations.
+Icarus Verilog and yosys are enough to verify the design and measure every
+optimisation in it.
 
 ```sh
-make -C sim sim        # run the design, self-checks against the TB model
-make -C sim baseline   # run the pre-optimisation variant
-make -C sim compare    # A/B their switching activity, like-for-like
+make -C sim sim         # full chip, optimised   -> PASS: 16/16
+make -C sim baseline    # full chip, pre-optimisation
+make -C sim compare     # A/B their switching activity, like-for-like
+sim/sweep.sh            # sweep weight sparsity, re-verifying each point
+sim/sweep.sh --col      # same, for whole-column sparsity
 ```
 
-`make sim` prints `PASS: 16/16 result vectors match` — the testbench carries its
-own reference model and checks every output against it.
+Unit tests:
 
-`make compare` drives `sim/vcd_activity.py`, a VCD toggle counter that measures
-what the vendor power tools could not. Sample output:
+```sh
+iverilog -g2012 -o /tmp/t tb/tb_seq_div.v rtl/seq_div.v            && vvp /tmp/t
+iverilog -g2012 -o /tmp/t tb/tb_cdc.v rtl/async_gray_fifo.v rtl/sync_mb.v && vvp /tmp/t
+iverilog -g2012 -o /tmp/t tb/tb_mac_pl.v rtl/experimental/mac_8in_pl.v rtl/mac_8in.v && vvp /tmp/t
+```
 
-```
-MAC array (core 1):   40,444 -> 38,294   (-5.3%)
-whole chip:          297,231 -> 290,963   (-2.1%)
-```
+`rtl/filelist.txt` is the single RTL list read by the simulation, synthesis and
+Quartus flows, so a module cannot be missing from one of them.
 
 ---
 
 ## Results
 
-**The clock gating removes 84% of clock edges** at the MAC columns on the real
-workload (`g_clk` toggles 46 times where `clk` toggles 287). Full measured
-tables, including the two places where operand isolation makes things *worse*,
-are in [results/activity-baseline-vs-gated.md](results/activity-baseline-vs-gated.md).
+Full tables: **[results/measurements.md](results/measurements.md)**.
 
-The original project's synthesis reports claimed the opposite — an 80 mW gated
-build against a 6 mW ungated one. That comparison is invalid, for reasons worth
-reading if you ever add zero-detect logic to a datapath and watch the power
-estimate go up:
+| | |
+|---|---|
+| Verification | 16/16 full-chip vectors; 0 errors across the three unit tests |
+| Clock-gating ratio | **87.2%** of cycles with the MAC column enables low, uniform across all 16 columns |
+| MAC array activity | **−14.4%** vs. the pre-work design |
+| Divider | **3.0× fewer cells, 4.5× shorter logic depth** (1650 → 553 cells, ×16 instances) |
+| Memories | **9,216 flops → 6 inferred memories + 576 flops** |
+| Sparsity | array activity ratio falls to 0.90 at 90% whole-column weight sparsity |
+
+Power in milliwatts and Fmax are *not* measured — both need a tool that is not
+currently available here. The activity figures are ratios, and the RTL metric
+cannot see the clock tree, which is where the clock gating actually pays. See §7
+of the measurements for what is and is not established.
+
+### The original power numbers were invalid
+
+The pre-work synthesis reported an 80 mW gated build against a 6 mW ungated one.
+That comparison does not measure clock gating:
 
 - the gated netlist had two **unresolved black boxes** (134 `tri` nets), so most
-  of its "switching power" was the tool's default X-transition factor on
+  of its "switching power" was the tool's default X-transition factor applied to
   undriven high-fanout buses;
 - the two builds had **different core counts** (1 vs 2);
-- the final step was **never re-synthesised** (byte-identical outputs to the
-  previous step);
-- and both power engines were running **vectorless** — `Activity File: N.A.`,
+- the final step was **never re-synthesised** — byte-identical outputs to the
+  previous step;
+- and both power engines ran **vectorless** — `Activity File: N.A.`,
   `Sequential Element Activity: 0.200000`, `Default icg ratio: N.A.` — which
   structurally cannot see a data-dependent saving.
 
-Full post-mortem: **[docs/clock-gating-power.md](docs/clock-gating-power.md)**.
-It also explains why the same optimisation measured favourably on a Cyclone IV
-Quartus flow (§7): Quartus was given a real VCD, so it was vector-based.
+Worth reading if you have ever added zero-detect logic to a datapath and watched
+the power estimate go up: **[docs/clock-gating-power.md](docs/clock-gating-power.md)**.
+§7 explains why the same optimisation measured favourably on a Cyclone IV Quartus
+flow — Quartus was given a real VCD, so it was vector-based.
 
 ---
 
@@ -117,10 +129,11 @@ fpga/run_quartus.sh fit          # + fitter and timing
 fpga/run_quartus.sh power        # power analysis, VCD-annotated
 ```
 
-Targets Cyclone IV E `EP4CE115F29C7`. The core has ~790 ports, so all but `clk`
-and `reset` are assigned `VIRTUAL_PIN`. `run_quartus.sh` stages onto the Windows
-filesystem first, because Quartus is a Windows binary and cannot follow WSL
-paths.
+Targets Cyclone IV E `EP4CE115F29C7`. The core has ~800 ports, so all but `clk`,
+`clk2` and `reset` are assigned `VIRTUAL_PIN`; `fpga/gen_qsf.py` regenerates the
+project from `rtl/filelist.txt` and the port list. `run_quartus.sh` stages onto
+the Windows filesystem first, because Quartus is a Windows binary and cannot
+follow WSL paths.
 
 The `.qsf` sets `POWER_USE_INPUT_FILE VCD` so the Power Analyzer uses real toggle
 rates rather than its 12.5% default, and leaves `AUTO_CLOCK_ENABLE_RECOGNITION`
@@ -128,11 +141,14 @@ on — register clock-enable is the FPGA equivalent of an ICG, and a hand-built
 gated clock on Cyclone IV is actively harmful. See
 [docs/clock-gating-power.md](docs/clock-gating-power.md) §7.
 
-**Tooling status:** not currently runnable here. Quartus Standard 23.1's 30-day
-evaluation has expired, the two Quartus Lite installs contain device files but no
-executables, and the Questa Starter licence expired 6 Jan 2026. Installing
-**Quartus Prime Lite** fixes it — no licence, no expiry, supports Cyclone IV/V
-and the Power Analyzer.
+All RTL is plain Verilog-2005 — the SystemVerilog packed array that previously
+forced `sfp_row.v` to be read as SystemVerilog is gone, which is also what made
+it an unresolved black box under `analyze -format verilog`.
+
+**Tooling status:** Quartus Standard 23.1's 30-day evaluation has expired and the
+two Quartus Lite trees under `/mnt/c/intelFPGA_lite` contain device files but no
+executables. Quartus Prime Lite needs no licence and does not expire; set
+`QUARTUS_ROOT` if it installs somewhere other than the default.
 
 ### ASIC — Design Compiler + Innovus (`syn/`, `pnr/`)
 
@@ -153,7 +169,7 @@ cd syn && dc_shell-xg-t -f run_dc.tcl
 
 | script | purpose |
 |---|---|
-| `syn/run_dc.tcl` | synthesis, as originally run |
+| `syn/run_dc.tcl` | synthesis; reads `rtl/filelist.txt`, exits non-zero on any unmapped block or `tri` net |
 | `syn/run_power_saif.tcl` | **activity-annotated** power, and refuses to report if any block is a black box |
 | `syn/clock_gating_setup.tcl` | tool-inferred integrated clock gaters, to replace the hand-rolled latch+AND |
 | `sim/gen_saif.md` | how to produce the SAIF / VCD both flows want |
@@ -162,20 +178,19 @@ cd syn && dc_shell-xg-t -f run_dc.tcl
 
 ## Where to go next
 
-[docs/extensions.md](docs/extensions.md) has a ranked list. The short version:
+[docs/extensions.md](docs/extensions.md) tracks status. What remains:
 
-- **Four real bugs** to fix first — a synchroniser whose reset does nothing, a
-  FIFO array driven from two clock domains, a pipelined MAC that resets off a
-  gated clock and double-drives two registers, and a synthesis script that
-  cannot fail on black boxes.
-- **Two operand-isolation defects** that measurably make activity worse, both
-  a few lines.
-- `mc_div.v` is a **combinational divide** behind a counter that pipelines
-  nothing — 16 of them, and they will set your Fmax.
-- `sram_w16.v`'s async array reset blocks block-RAM inference; fixing it is
-  probably the largest single area win available.
-- Both cores are tied to the same clock, so **the CDC hardware you built is never
-  exercised** in the condition it exists for.
+1. **Power and Fmax.** `fpga/run_quartus.sh power` and `... fit`. The tool side is
+   configured; only the tool is missing. Fmax also decides whether the pipelined
+   MAC variant is worth adopting.
+2. **Synchronise the instruction bus into core 2.** `fullchip` now takes `clk2`
+   and the row-sum FIFOs cross domains correctly, but `inst` is driven in the
+   `clk` domain and read by both cores, so `clk2` must still be tied to `clk`.
+   A command FIFO reusing `async_gray_fifo` is the obvious route.
+3. **Gate-level activity.** RTL simulation has no delays, so glitch power is
+   absent and large combinational blocks are undercounted.
+4. **Shift-based normalisation**, if the accuracy cost measures acceptable
+   against the testbench's reference model.
 
 ---
 
@@ -185,9 +200,10 @@ cd syn && dc_shell-xg-t -f run_dc.tcl
 rtl/          synthesisable RTL (technology-independent)
   experimental/   pipelined MAC, and pre-optimisation baseline for A/B
 tb/           testbench + generated stimulus in tb/data/
-sim/          licence-free flow: Makefile, VCD activity analyser, SAIF notes
+sim/          licence-free flow: Makefile, VCD activity analyser, stimulus
+              generator, sparsity sweep, SAIF notes
 fpga/         Quartus project, constraints, WSL run wrapper
 syn/ pnr/     ASIC scripts, PDK referenced via environment variables
 docs/         clock-gating post-mortem, extension backlog
-results/      measured activity tables
+results/      measured activity, area and sparsity tables
 ```

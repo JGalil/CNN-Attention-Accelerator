@@ -1,0 +1,20 @@
+# Synthesisable RTL, leaf first. Single source of truth for every flow:
+# syn/run_dc.tcl, fpga/gen_qsf.py and sim/Makefile all read this file, so an
+# added module cannot be left out of one of them.
+# Lines beginning with # and blank lines are ignored. Paths are relative to rtl/.
+sync.v
+sync_mb.v
+fifo_mux_2_1.v
+fifo_mux_8_1.v
+fifo_mux_16_1.v
+fifo_depth16.v
+ofifo.v
+sram_w16.v
+async_gray_fifo.v
+seq_div.v
+mac_8in.v
+mac_col.v
+mac_array.v
+sfp_row.v
+core.v
+fullchip.v

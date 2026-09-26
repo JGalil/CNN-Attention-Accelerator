@@ -20,8 +20,8 @@ each net in *your* design actually toggles on *your* workload.
 Usage
 -----
   ./vcd_activity.py build/fullchip.vcd
-  ./vcd_activity.py build/fullchip.vcd --scope fullchip_tb.full_chip_instance
-  ./vcd_activity.py a.vcd --compare b.vcd --scope fullchip_tb.full_chip_instance
+  ./vcd_activity.py build/fullchip.vcd --scope fullchip_tb.fullchip_instance
+  ./vcd_activity.py a.vcd --compare b.vcd --scope fullchip_tb.fullchip_instance
   ./vcd_activity.py build/fullchip.vcd --start 20000 --by-module
 """
 from __future__ import annotations
@@ -35,7 +35,8 @@ TIME_RE = re.compile(rb"^#(\d+)")
 
 
 class Signal:
-    __slots__ = ("name", "width", "value", "toggles", "changes")
+    __slots__ = ("name", "width", "value", "toggles", "changes",
+                 "high_time", "last_t", "first_t")
 
     def __init__(self, name: str, width: int) -> None:
         self.name = name
@@ -43,6 +44,9 @@ class Signal:
         self.value = None      # last seen value, as a bit string
         self.toggles = 0       # bit transitions (Hamming distance), the power proxy
         self.changes = 0       # value-change events, regardless of how many bits
+        self.high_time = 0     # time spent non-zero, for duty measurement
+        self.last_t = None
+        self.first_t = None
 
 
 def _norm(v: str, width: int) -> str:
@@ -137,6 +141,13 @@ def parse(path: str, scope_filter: str | None, start: int, end: int | None):
             for sig in targets:
                 nv = _norm(val, sig.width) if c0 not in "rR" else val
                 ov = sig.value
+                # Accumulate time-at-value for duty reporting.
+                if sig.last_t is not None and ov is not None:
+                    if "1" in ov:
+                        sig.high_time += t - sig.last_t
+                sig.last_t = t
+                if sig.first_t is None:
+                    sig.first_t = t
                 if ov is None:
                     sig.value = nv          # first value: initialise, do not count
                     continue
@@ -183,6 +194,12 @@ def main() -> int:
     ap.add_argument("--top", type=int, default=20, help="rows to show")
     ap.add_argument("--by-module", action="store_true",
                     help="aggregate by parent scope instead of listing signals")
+    ap.add_argument("--duty", metavar="SUBSTRING",
+                    help="instead of activity, report the fraction of time each "
+                         "matching signal is non-zero. For a register enable this "
+                         "is the clock-gating ratio to hand a vectorless power "
+                         "estimate (Design Compiler -clock_gating_ratio, or the "
+                         "'Default icg ratio' field Innovus reports as N.A.).")
     ap.add_argument("--common", action="store_true",
                     help="with --compare, restrict both sides to signals present "
                          "in BOTH VCDs. Use this whenever the two builds differ "
@@ -195,6 +212,28 @@ def main() -> int:
         print(f"no signals matched in {args.vcd}"
               + (f" under scope {args.scope}" if args.scope else ""), file=sys.stderr)
         return 1
+    if args.duty:
+        rows = [s for s in a.values() if args.duty in s.name]
+        if not rows:
+            print(f"no signal name contains {args.duty!r}", file=sys.stderr)
+            return 1
+        end = args.end if args.end is not None else max(
+            (s.last_t for s in a.values() if s.last_t is not None), default=0)
+        print(f"{'signal':<64} {'high':>8} {'gated':>8}")
+        print("-" * 82)
+        for s in sorted(rows, key=lambda s: s.name):
+            span = end - (s.first_t if s.first_t is not None else 0)
+            if span <= 0:
+                continue
+            duty = s.high_time / span
+            print(f"{s.name:<64} {duty:7.1%} {1-duty:7.1%}")
+        agg = [s for s in rows if s.first_t is not None and end > s.first_t]
+        if agg:
+            m = sum(s.high_time / (end - s.first_t) for s in agg) / len(agg)
+            print("-" * 82)
+            print(f"{'mean over ' + str(len(agg)) + ' signals':<64} {m:7.1%} {1-m:7.1%}")
+        return 0
+
     a_total, a_mod = summarise(a)
 
     if not args.compare:

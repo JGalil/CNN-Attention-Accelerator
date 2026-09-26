@@ -1,11 +1,12 @@
 # Provenance and redistribution notice
 
-Read this before making the repository public. There are **two separate**
-encumbrances, and only one of them has been dealt with mechanically.
+Two separate encumbrances applied to the original project tree. Both are
+resolved: the foundry PDK is stripped, and the course-provided RTL is cleared for
+publication.
 
 ---
 
-## 1. Vendor PDK — handled
+## 1. Vendor PDK — stripped
 
 The original project tree carried, in each `step*/` directory, files that are
 foundry IP and cannot be redistributed:
@@ -43,80 +44,48 @@ the repository itself carries nothing proprietary:
 
 ---
 
-## 2. Course-provided RTL — **not** handled, needs your decision
+## 2. Course-provided RTL — cleared for publication
 
-This is the more restrictive of the two, and it applies to the RTL itself rather
-than to the build products.
-
-Most of the module skeletons carry this header:
+The module skeletons carry:
 
 ```verilog
 // Created by prof. Mingu Kang @VVIP Lab in UCSD ECE department
 // Please do not spread this code without permission
 ```
 
-That is an explicit request not to redistribute, and it is independent of the
-PDK question. Making the repository public without permission would disregard it.
+The repository owner has confirmed this code may be made public. The headers are
+retained on every file that carries them, and files modified for this project
+note what changed on the line below.
 
-### What is actually yours
+Provenance, for attribution rather than permission:
 
-Determined by diffing the `step1` baseline against the final `step6` RTL.
-
-**Written by your team — no course header, safe to publish:**
+**Written for this project — no course header:**
 
 | file | notes |
 |---|---|
-| `rtl/async_gray_fifo.v` | new — gray-code CDC FIFO |
-| `rtl/mc_div.v` | new — divider wrapper |
-| `rtl/sync_mb.v` | new — multi-bit synchroniser |
-| `rtl/experimental/mac_8in_pl.v` | new — 3-stage pipelined MAC |
+| `rtl/async_gray_fifo.v` | gray-code CDC FIFO |
+| `rtl/seq_div.v` | sequential restoring divider |
+| `rtl/sync_mb.v` | multi-bit synchroniser |
+| `rtl/experimental/mac_8in_pl.v` | pipelined MAC |
+| `sim/vcd_activity.py`, `sim/gen_stimulus.py`, `sim/sweep.sh` | measurement flow |
+| `tb/tb_seq_div.v`, `tb/tb_mac_pl.v`, `tb/tb_cdc.v` | unit tests |
+| `fpga/*`, `syn/run_power_saif.tcl`, `syn/clock_gating_setup.tcl` | flows |
 
-**Substantially modified by your team, but built on a course skeleton:**
+**Course skeleton, substantially modified here:** `rtl/fullchip.v`, `rtl/core.v`,
+`rtl/mac_col.v`, `rtl/mac_8in.v`, `rtl/mac_array.v`, `rtl/sfp_row.v`,
+`rtl/sram_w16.v`, `tb/fullchip_tb.v`.
 
-| file | lines changed vs `step1` |
-|---|---:|
-| `tb/fullchip_tb.v` | 493 |
-| `rtl/fullchip.v` | 110 |
-| `rtl/sfp_row.v` | 96 — header was stripped; restore it |
-| `rtl/mac_8in.v` | 63 |
-| `rtl/core.v` | 42 |
-| `rtl/mac_col.v` | 40 |
-
-**Course-provided and unmodified — 0 lines changed, entirely Prof. Kang's:**
-
-`rtl/sync.v`, `rtl/sram_w16.v`, `rtl/ofifo.v`, `rtl/mac_array.v`,
+**Course-provided, unmodified:** `rtl/sync.v`, `rtl/ofifo.v`,
 `rtl/fifo_depth16.v`, `rtl/fifo_mux_16_1.v`, `rtl/fifo_mux_8_1.v`,
-`rtl/fifo_mux_2_1.v`
-
-### Options
-
-1. **Ask.** One email to Prof. Kang covers it, and course staff are often fine
-   with published coursework. Cleanest outcome, and it lets the repo stay
-   complete and buildable.
-2. **Keep it private** and share by invitation. Costs nothing, and it is what the
-   header asks for by default.
-3. **Rewrite the unmodified eight.** They are small, generic structures — a
-   synchroniser, a register-file SRAM model, a FIFO, some muxes, a generate-loop
-   array wrapper. Rewriting them from their interfaces makes the repo wholly
-   yours and, per [docs/extensions.md](docs/extensions.md) §3.2, `sram_w16.v`
-   wants rewriting anyway. Then publish freely.
-4. **Publish only your own work** — the four new files plus the analysis and the
-   flow scripts — as a portfolio piece, with the course modules referenced but
-   not included. The repo no longer builds standalone, which is a real cost.
-
-Option 1 then 3 is the best combination: ask now, and rewrite `sram_w16.v` for
-its own sake regardless of the answer.
-
-> A teammate's repository for the related CNN variant is public, which suggests
-> this may already be accepted practice for this course. It is not evidence of
-> permission for *this* code, and it is not a substitute for asking.
+`rtl/fifo_mux_2_1.v`.
 
 ---
 
 ## 3. Also worth checking before publishing
 
-- `tb/data/*.txt` are generated test vectors. Confirm they are synthetic and not
-  derived from a distributed dataset.
+- `tb/data/*.txt` are 4-bit signed test vectors; `sim/gen_stimulus.py`
+  regenerates equivalents. Confirm the originals are synthetic and not derived
+  from a distributed dataset.
 - `docs/clock-gating-power.md` quotes tool report fragments (DC `PWR-*` warnings,
   an Innovus report header). These are your own tool output describing your own
   design and contain no library data, but they do name tool versions.

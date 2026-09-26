@@ -52,20 +52,22 @@ set hdlin_auto_save_templates false
 define_design_lib WORK -path .template
 set verilogout_single_bit false
 
-# read RTL
-analyze -format verilog -lib WORK fullchip.v
-analyze -format verilog -lib WORK core.v
-analyze -format verilog -lib WORK sync.v
-analyze -format verilog -lib WORK sfp_row.v
-analyze -format verilog -lib WORK mac_col.v
-analyze -format verilog -lib WORK mac_8in.v
-analyze -format verilog -lib WORK mac_array.v
-analyze -format verilog -lib WORK sram_w16.v
-analyze -format verilog -lib WORK ofifo.v
-analyze -format verilog -lib WORK fifo_depth16.v
-analyze -format verilog -lib WORK fifo_mux_16_1.v
-analyze -format verilog -lib WORK fifo_mux_8_1.v
-analyze -format verilog -lib WORK fifo_mux_2_1.v
+# read RTL, from the single file list shared with the simulation and FPGA flows
+set flist "${rtlPath}/filelist.txt"
+if {![file exists $flist]} { error "missing $flist" }
+set fh [open $flist r]
+set rtl_files {}
+while {[gets $fh line] >= 0} {
+    set line [string trim $line]
+    if {$line eq "" || [string index $line 0] eq "#"} { continue }
+    lappend rtl_files $line
+}
+close $fh
+foreach f $rtl_files {
+    analyze -format verilog -lib WORK $f
+}
+echo "analyzed [llength $rtl_files] RTL files"
+
 
 
 
@@ -141,11 +143,25 @@ while { [gets $inFile line]>=0 } {
 }
 close $inFile
 
-set unmapped_designs [get_designs -filter "is_unmapped == true" $top_module]
-if {  [sizeof_collection $unmapped_designs] != 0 } {
+# Fail on unmapped logic anywhere in the hierarchy, not just at the top. The
+# previous form passed $top_module, so a black-boxed sub-block was never
+# reported: sfp_row and async_gray_fifo were unresolved in the step5/step6 runs
+# and their power reports were meaningless as a result.
+set unmapped_designs [get_designs -quiet -filter "is_unmapped == true"]
+if { [sizeof_collection $unmapped_designs] != 0 } {
 	echo "****************************************************"
-	echo "* ERROR!!!! Compile finished with unmapped logic.  *"
+	echo "* ERROR: compile finished with unmapped logic:      *"
+	foreach_in_collection d $unmapped_designs { echo "*   [get_object_name $d]" }
 	echo "****************************************************"
+	exit 1
+}
+
+# A tri net almost always means an unresolved reference; the power engine then
+# applies its X-transition factor to everything the missing block drives.
+set tri_nets [get_nets -quiet -hierarchical -filter "net_type == tri"]
+if { [sizeof_collection $tri_nets] != 0 } {
+	echo "ERROR: [sizeof_collection $tri_nets] tri nets -- unresolved reference."
+	exit 1
 }
 # Done
 sh date

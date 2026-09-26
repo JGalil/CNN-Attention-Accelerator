@@ -126,7 +126,8 @@ reg [bw_psum-1:0] temp_val2;
 
 fullchip #(.bw(bw), .bw_psum(bw_psum), .col(col), .pr(pr)) fullchip_instance (
       .reset(reset),
-      .clk(clk), 
+      .clk(clk),
+      .clk2(clk),   // see fullchip.v: inst is not yet synchronised into core 2
       .mem_in_1(mem_in), 
       .mem_in_2(mem_in_2), 
       .inst(inst),
@@ -144,6 +145,17 @@ initial begin
 
   $dumpfile("fullchip_tb.vcd");
   $dumpvars(0,fullchip_tb);
+
+`ifdef SAIF_DUMP
+  // Toggle capture for activity-annotated power analysis. Icarus does not
+  // implement these, so they are guarded; build with -DSAIF_DUMP under a
+  // simulator that does (see sim/gen_saif.md).
+  //
+  // Capture starts after reset and the memory preload so the average is not
+  // dominated by a burst of writes the real workload performs once.
+  $set_gate_level_monitoring("rtl_on");
+  $set_toggle_region(fullchip_tb.fullchip_instance);
+`endif
   // $dumpvars(1, fullchip_tb.full_chip_instance.async_gray_fifo_instance_core1_to_2.fifo[0]);
   // $dumpvars(1, fullchip_tb.full_chip_instance.async_gray_fifo_instance_core1_to_2.fifo[1]);
 
@@ -659,6 +671,10 @@ $display("##### move pmem to pmem_out #####");
 
 ////////////// SFP Norm ///////////////////
 
+`ifdef SAIF_DUMP
+  $toggle_start();
+`endif
+
 $display("##### SFP Normalization #####");
 
   for (q=0; q<total_cycle; q=q+1) begin
@@ -767,7 +783,12 @@ end
   acc = 0; div = 0;
   #0.5 clk = 1'b1; 
 
-  #10 $finish;
+  #10;
+`ifdef SAIF_DUMP
+  $toggle_stop();
+  $toggle_report("../fullchip.saif", 1.0e-9, fullchip_tb.fullchip_instance);
+`endif
+  $finish;
 
 
 //  for (q=0; q<col; q=q+1) begin

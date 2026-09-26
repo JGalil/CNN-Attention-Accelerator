@@ -1,0 +1,254 @@
+VCD info: dumpfile fullchip_tb.vcd opened for output.
+##### Q data txt reading #####
+##### K data txt reading core 1 #####
+captured_data=          0, @j=          0
+captured_data=          0, @j=          1
+captured_data=          0, @j=          2
+captured_data=          0, @j=          3
+captured_data=          0, @j=          4
+captured_data=          0, @j=          5
+captured_data=          0, @j=          6
+captured_data=          0, @j=          7
+captured_data=         -1, @j=          0
+captured_data=         -2, @j=          1
+captured_data=         -1, @j=          2
+captured_data=          3, @j=          3
+captured_data=          3, @j=          4
+captured_data=         -8, @j=          5
+captured_data=         -4, @j=          6
+captured_data=         -2, @j=          7
+captured_data=          0, @j=          0
+captured_data=          0, @j=          1
+captured_data=          0, @j=          2
+captured_data=          0, @j=          3
+captured_data=          0, @j=          4
+captured_data=          0, @j=          5
+captured_data=          0, @j=          6
+captured_data=          0, @j=          7
+captured_data=          0, @j=          0
+captured_data=          0, @j=          1
+captured_data=          0, @j=          2
+captured_data=          0, @j=          3
+captured_data=          0, @j=          4
+captured_data=          0, @j=          5
+captured_data=          0, @j=          6
+captured_data=          0, @j=          7
+captured_data=          0, @j=          0
+captured_data=          0, @j=          1
+captured_data=          0, @j=          2
+captured_data=          0, @j=          3
+captured_data=          0, @j=          4
+captured_data=          0, @j=          5
+captured_data=          0, @j=          6
+captured_data=          0, @j=          7
+captured_data=          0, @j=          0
+captured_data=          0, @j=          1
+captured_data=          0, @j=          2
+captured_data=          0, @j=          3
+captured_data=          0, @j=          4
+captured_data=          0, @j=          5
+captured_data=          0, @j=          6
+captured_data=          0, @j=          7
+captured_data=          0, @j=          0
+captured_data=          0, @j=          1
+captured_data=          0, @j=          2
+captured_data=          0, @j=          3
+captured_data=          0, @j=          4
+captured_data=          0, @j=          5
+captured_data=          0, @j=          6
+captured_data=          0, @j=          7
+captured_data=          0, @j=          0
+captured_data=          0, @j=          1
+captured_data=          0, @j=          2
+captured_data=          0, @j=          3
+captured_data=          0, @j=          4
+captured_data=          0, @j=          5
+captured_data=          0, @j=          6
+captured_data=          0, @j=          7
+##### K data txt reading core 2 #####
+captured_data=          0, @j=          0
+captured_data=          0, @j=          1
+captured_data=          0, @j=          2
+captured_data=          0, @j=          3
+captured_data=          0, @j=          4
+captured_data=          0, @j=          5
+captured_data=          0, @j=          6
+captured_data=          0, @j=          7
+captured_data=          0, @j=          0
+captured_data=          0, @j=          1
+captured_data=          0, @j=          2
+captured_data=          0, @j=          3
+captured_data=          0, @j=          4
+captured_data=          0, @j=          5
+captured_data=          0, @j=          6
+captured_data=          0, @j=          7
+captured_data=          0, @j=          0
+captured_data=          0, @j=          1
+captured_data=          0, @j=          2
+captured_data=          0, @j=          3
+captured_data=          0, @j=          4
+captured_data=          0, @j=          5
+captured_data=          0, @j=          6
+captured_data=          0, @j=          7
+captured_data=          0, @j=          0
+captured_data=          0, @j=          1
+captured_data=          0, @j=          2
+captured_data=          0, @j=          3
+captured_data=          0, @j=          4
+captured_data=          0, @j=          5
+captured_data=          0, @j=          6
+captured_data=          0, @j=          7
+captured_data=          0, @j=          0
+captured_data=          0, @j=          1
+captured_data=          0, @j=          2
+captured_data=          0, @j=          3
+captured_data=          0, @j=          4
+captured_data=          0, @j=          5
+captured_data=          0, @j=          6
+captured_data=          0, @j=          7
+captured_data=          0, @j=          0
+captured_data=          0, @j=          1
+captured_data=          0, @j=          2
+captured_data=          0, @j=          3
+captured_data=          0, @j=          4
+captured_data=          0, @j=          5
+captured_data=          0, @j=          6
+captured_data=          0, @j=          7
+captured_data=          0, @j=          0
+captured_data=          0, @j=          1
+captured_data=          0, @j=          2
+captured_data=          0, @j=          3
+captured_data=          0, @j=          4
+captured_data=          0, @j=          5
+captured_data=          0, @j=          6
+captured_data=          0, @j=          7
+captured_data=          3, @j=          0
+captured_data=         -8, @j=          1
+captured_data=          2, @j=          2
+captured_data=         -8, @j=          3
+captured_data=         -3, @j=          4
+captured_data=         -3, @j=          5
+captured_data=         -7, @j=          6
+captured_data=         -6, @j=          7
+##### Estimated multiplication result core 1 #####
+##### Estimated multiplication result core 2 #####
+##### Qmem writing  #####
+Writing Q Data to SRAM @ Cycle 0: -4 -6 -5 7 6 7 4 -2
+Writing Q Data to SRAM @ Cycle 1: -5 7 -8 4 5 -8 6 -1
+Writing Q Data to SRAM @ Cycle 2: -5 2 -8 -8 -8 -8 4 -2
+Writing Q Data to SRAM @ Cycle 3: 5 -8 -1 6 7 -1 3 -1
+Writing Q Data to SRAM @ Cycle 4: -1 6 1 -8 5 -5 -3 1
+Writing Q Data to SRAM @ Cycle 5: -5 2 5 -2 1 1 7 4
+Writing Q Data to SRAM @ Cycle 6: -7 7 -1 4 5 -3 3 3
+Writing Q Data to SRAM @ Cycle 7: -6 6 -5 -3 4 3 7 -8
+##### Kmem writing #####
+##### K data loading to processor #####
+##### execute #####
+##### move ofifo to pmem #####
+Memory write to PSUM mem add 0 00000000000000000000000000000000000fffab 
+Memory write to PSUM mem add 0 00000ffff8000000000000000000000000000000 
+Memory write to PSUM mem add 1 00000000000000000000000000000000000fff6e 
+Memory write to PSUM mem add 1 0000000044000000000000000000000000000000 
+Memory write to PSUM mem add 2 0000000000000000000000000000000000000031 
+Memory write to PSUM mem add 2 000000000d000000000000000000000000000000 
+Memory write to PSUM mem add 3 00000000000000000000000000000000000ffffc 
+Memory write to PSUM mem add 3 0000000031000000000000000000000000000000 
+Memory write to PSUM mem add 4 000000000000000000000000000000000000001e 
+Memory write to PSUM mem add 4 000000001d000000000000000000000000000000 
+Memory write to PSUM mem add 5 00000000000000000000000000000000000fffac 
+Memory write to PSUM mem add 5 00000fffcd000000000000000000000000000000 
+Memory write to PSUM mem add 6 00000000000000000000000000000000000fff64 
+Memory write to PSUM mem add 6 000000001b000000000000000000000000000000 
+Memory write to PSUM mem add 7 00000000000000000000000000000000000fffb6 
+Memory write to PSUM mem add 7 00000fffde000000000000000000000000000000 
+##### move pmem to pmem_out #####
+:) CORE 1 MATCHED @cycle 0
+  Actual  = 0 0 0 0 0 0 -8 0
+  Predict = 0 0 0 0 0 0 -8 0
+:) CORE 2 MATCHED @cycle 0
+  Actual  = -85 0 0 0 0 0 0 0
+  Predict = -85 0 0 0 0 0 0 0
+:) CORE 1 MATCHED @cycle 1
+  Actual  = 0 0 0 0 0 0 68 0
+  Predict = 0 0 0 0 0 0 68 0
+:) CORE 2 MATCHED @cycle 1
+  Actual  = -146 0 0 0 0 0 0 0
+  Predict = -146 0 0 0 0 0 0 0
+:) CORE 1 MATCHED @cycle 2
+  Actual  = 0 0 0 0 0 0 13 0
+  Predict = 0 0 0 0 0 0 13 0
+:) CORE 2 MATCHED @cycle 2
+  Actual  = 49 0 0 0 0 0 0 0
+  Predict = 49 0 0 0 0 0 0 0
+:) CORE 1 MATCHED @cycle 3
+  Actual  = 0 0 0 0 0 0 49 0
+  Predict = 0 0 0 0 0 0 49 0
+:) CORE 2 MATCHED @cycle 3
+  Actual  = -4 0 0 0 0 0 0 0
+  Predict = -4 0 0 0 0 0 0 0
+:) CORE 1 MATCHED @cycle 4
+  Actual  = 0 0 0 0 0 0 29 0
+  Predict = 0 0 0 0 0 0 29 0
+:) CORE 2 MATCHED @cycle 4
+  Actual  = 30 0 0 0 0 0 0 0
+  Predict = 30 0 0 0 0 0 0 0
+:) CORE 1 MATCHED @cycle 5
+  Actual  = 0 0 0 0 0 0 -51 0
+  Predict = 0 0 0 0 0 0 -51 0
+:) CORE 2 MATCHED @cycle 5
+  Actual  = -84 0 0 0 0 0 0 0
+  Predict = -84 0 0 0 0 0 0 0
+:) CORE 1 MATCHED @cycle 6
+  Actual  = 0 0 0 0 0 0 27 0
+  Predict = 0 0 0 0 0 0 27 0
+:) CORE 2 MATCHED @cycle 6
+  Actual  = -156 0 0 0 0 0 0 0
+  Predict = -156 0 0 0 0 0 0 0
+:) CORE 1 MATCHED @cycle 7
+  Actual  = 0 0 0 0 0 0 -34 0
+  Predict = 0 0 0 0 0 0 -34 0
+:) CORE 2 MATCHED @cycle 7
+  Actual  = -74 0 0 0 0 0 0 0
+  Predict = -74 0 0 0 0 0 0 0
+##### SFP Normalization #####
+SFP cycle 0: waited 2 cycles (skip=1)
+core1@cycle 0:    Actual= 0 0 0 0 0 0 0 0
+core1@cycle 0: Pred Norm= 0 0 0 0 0 0 0 0
+core2@cycle 0:    Actual= 0 0 0 0 0 0 0 0
+core2@cycle 0: Pred Norm= 0 0 0 0 0 0 0 0
+SFP cycle 1: waited 3 cycles (skip=1)
+core1@cycle 1:    Actual= 0 0 0 0 0 0 0 0
+core1@cycle 1: Pred Norm= 0 0 0 0 0 0 0 0
+core2@cycle 1:    Actual= 0 0 0 0 0 0 0 0
+core2@cycle 1: Pred Norm= 0 0 0 0 0 0 0 0
+SFP cycle 2: waited 3 cycles (skip=1)
+core1@cycle 2:    Actual= 0 0 0 0 0 0 0 0
+core1@cycle 2: Pred Norm= 0 0 0 0 0 0 0 0
+core2@cycle 2:    Actual= 0 0 0 0 0 0 0 0
+core2@cycle 2: Pred Norm= 0 0 0 0 0 0 0 0
+SFP cycle 3: waited 3 cycles (skip=1)
+core1@cycle 3:    Actual= 0 0 0 0 0 0 0 0
+core1@cycle 3: Pred Norm= 0 0 0 0 0 0 0 0
+core2@cycle 3:    Actual= 0 0 0 0 0 0 0 0
+core2@cycle 3: Pred Norm= 0 0 0 0 0 0 0 0
+SFP cycle 4: waited 3 cycles (skip=1)
+core1@cycle 4:    Actual= 0 0 0 0 0 0 0 0
+core1@cycle 4: Pred Norm= 0 0 0 0 0 0 0 0
+core2@cycle 4:    Actual= 0 0 0 0 0 0 0 0
+core2@cycle 4: Pred Norm= 0 0 0 0 0 0 0 0
+SFP cycle 5: waited 3 cycles (skip=1)
+core1@cycle 5:    Actual= 0 0 0 0 0 0 0 0
+core1@cycle 5: Pred Norm= 0 0 0 0 0 0 0 0
+core2@cycle 5:    Actual= 0 0 0 0 0 0 0 0
+core2@cycle 5: Pred Norm= 0 0 0 0 0 0 0 0
+SFP cycle 6: waited 3 cycles (skip=1)
+core1@cycle 6:    Actual= 0 0 0 0 0 0 0 0
+core1@cycle 6: Pred Norm= 0 0 0 0 0 0 0 0
+core2@cycle 6:    Actual= 0 0 0 0 0 0 0 0
+core2@cycle 6: Pred Norm= 0 0 0 0 0 0 0 0
+SFP cycle 7: waited 3 cycles (skip=1)
+core1@cycle 7:    Actual= 0 0 0 0 0 0 0 0
+core1@cycle 7: Pred Norm= 0 0 0 0 0 0 0 0
+core2@cycle 7:    Actual= 0 0 0 0 0 0 0 0
+core2@cycle 7: Pred Norm= 0 0 0 0 0 0 0 0
+../tb/fullchip_tb.v:771: $finish called at 161000 (1ps)

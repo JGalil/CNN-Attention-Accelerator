@@ -1,13 +1,14 @@
 // Created by prof. Mingu Kang @VVIP Lab in UCSD ECE department
 // Please do not spread this code without permission 
-module fullchip (clk, mem_in_1, mem_in_2, inst, reset, pmem_out_1, pmem_out_2, sfp_out_1, sfp_out_2, div_done_1, div_done_2, skip_thresh);
+module fullchip (clk, clk2, mem_in_1, mem_in_2, inst, reset, pmem_out_1, pmem_out_2, sfp_out_1, sfp_out_2, div_done_1, div_done_2, skip_thresh);
 
 parameter col = 8;
 parameter bw = 8;
 parameter bw_psum = 2*bw+4;
 parameter pr = 8;
 
-input  clk; 
+input  clk;      // core 1 and the host interface
+input  clk2;     // core 2; may be asynchronous to clk
 input  [pr*bw-1:0] mem_in_1; 
 input  [pr*bw-1:0] mem_in_2; 
 input  [19:0] inst; 
@@ -47,7 +48,16 @@ wire core2_clk;
 
 assign write_sum_out = inst[19];
 assign core1_clk = clk;
-assign core2_clk = clk;
+assign core2_clk = clk2;
+
+// The two row-sum FIFOs cross between core1_clk and core2_clk with gray-coded
+// pointers, so the inter-core data path is safe for independent clocks.
+//
+// The instruction bus is not: inst is driven in the clk domain and consumed by
+// both cores, so write_sum_out (inst[19]) reaches core 2 unsynchronised. Running
+// clk2 genuinely asynchronously therefore requires either a second instruction
+// port or a command FIFO into core 2. Until then clk2 must be driven from clk,
+// and tb/tb_cdc.v exercises the FIFOs across independent clocks directly.
 assign fifo_ext_rd_core1 = ~full1 & write_sum_out;
 assign fifo_ext_rd_core2 = ~full2 & write_sum_out;
 

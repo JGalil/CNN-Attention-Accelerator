@@ -4,10 +4,16 @@ This is the post-mortem on the `step5_clock_gating` / `step6` power numbers from
 the original project, and the reason the same thing happens to a systolic array
 when you add zero-detect comparators and watch the power go *up*.
 
-Short version: the gating works — it removes **84% of the clock edges** at the
-MAC columns on the real workload. The reported power increase was an artifact of
-two separate problems, one a broken synthesis run and one a fundamental limit of
+Short version: the gating works — the MAC column enables are low **87% of the
+time** on the real workload. The reported power increase was an artifact of two
+separate problems, one a broken synthesis run and one a fundamental limit of
 vectorless power estimation. Neither had anything to do with the comparators.
+
+Sections 1–4 are the post-mortem and describe the code as it was. Section 5
+onwards has been superseded by the rework; current numbers are in
+[../results/measurements.md](../results/measurements.md) and what changed is in
+[extensions.md](extensions.md). The analysis is kept because the failure mode
+generalises.
 
 ---
 
@@ -150,7 +156,11 @@ Two further reasons the tools saw nothing:
   column — and gets charged in full. You converted free ideal-clock capacitance
   into billed combinational capacitance.
 
-## 5. What the gating actually does, measured
+## 5. What the gating did, measured (pre-rework)
+
+> These numbers describe the original `mac_col`, which built its gater in RTL.
+> That gater has since been replaced by a register enable and the isolation
+> defects below are fixed; see [../results/measurements.md](../results/measurements.md).
 
 No licence needed for this. `sim/vcd_activity.py` counts bit transitions per net
 from the testbench VCD; on a fixed technology the ratio of transitions between
@@ -270,7 +280,8 @@ like something it isn't when you read the file.
 
 ## 6. Doing it properly from here
 
-Ranked by value.
+All four of these have been done — see [extensions.md](extensions.md). Kept here
+because the ordering is the useful part.
 
 1. **Delete the hand-rolled gater; let the tool infer ICGs.** The enable
    conditions are already in the RTL — that is what those 132 `EDFCNQD1` per
@@ -361,32 +372,32 @@ gating on FPGA should be register clock-enable, full stop.
 
 ### Practical notes for re-targeting this design to Quartus
 
-- `rtl/sfp_row.v` must be read as **SystemVerilog** (the packed array in §2).
-  The `.qsf` already does this. This is the same construct that black-boxed it
-  under `analyze -format verilog`.
-- `rtl/sram_w16.v` has an **asynchronous reset on the memory array**, which
-  blocks M9K block-RAM inference. It will become 16 × `sram_bit` registers plus
-  a 16-way mux — about 2560 flops for the 160-bit psum memory alone. Removing
-  the reset from the array (or switching to a synchronous one) lets it infer
-  block RAM and will dominate any other resource saving you make.
-- `rtl/mc_div.v` computes `dividend / divisor` in a single combinational
-  expression and merely *waits* four cycles before sampling it — the `cycles`
-  parameter does not pipeline anything. On FPGA that infers a full `LPM_DIVIDE`
-  in the critical path, ×8 instances per core. It will set your Fmax.
-- The core has ~790 ports, far beyond any package, so everything except `clk`
-  and `reset` is assigned `VIRTUAL_PIN` in the `.qsf`.
+- ~~`rtl/sfp_row.v` must be read as SystemVerilog (the packed array in §2).~~
+  Fixed: the packed array is gone and all RTL is plain Verilog-2005, which also
+  removes the construct that black-boxed it under `analyze -format verilog`.
+- ~~`rtl/sram_w16.v` has an asynchronous reset on the memory array, which blocks
+  M9K inference.~~ Fixed: the array carries no reset and now infers. Measured
+  with yosys, the 160-bit instance went from 57 cells with 16 × 160-bit flop
+  banks to 9 cells with one inferred memory.
+- ~~`rtl/mc_div.v` computes `dividend / divisor` combinationally and merely waits
+  four cycles before sampling it.~~ Replaced by `rtl/seq_div.v`: 3.0× fewer cells
+  and 4.5× shorter logic depth at the same latency, so it no longer infers a
+  `LPM_DIVIDE` in the critical path.
+- The core has ~800 ports, far beyond any package, so everything except `clk`,
+  `clk2` and `reset` is assigned `VIRTUAL_PIN` in the `.qsf`.
 
-### Tooling status on this machine
+### Tooling status
 
 - Quartus Prime **Standard** 23.1 at `/mnt/c/intelFPGA/23.1stdlite/quartus` —
-  binaries present, but the 30-day evaluation has **expired**
-  (`Error (292037)`).
+  binaries present, 30-day evaluation **expired** (`Error (292037)`).
 - Quartus Prime **Lite** at `/mnt/c/intelFPGA_lite/{21.1,23.1}` — device files
-  only, **no executables**; those installs are incomplete.
+  only, **no executables**.
 - Questa Starter licence at `/mnt/c/intelFPGA/LR-211345_License.dat` — **expired
   06-Jan-2026**.
 
-Reinstalling **Quartus Prime Lite** fixes this properly: it needs no licence at
-all and never expires, and it supports Cyclone IV E / Cyclone V and the Power
-Analyzer. Until then, everything in §5 runs on Icarus Verilog, which is already
-installed and needs nothing.
+Quartus Prime Lite needs no licence and does not expire, and supports Cyclone
+IV E / Cyclone V and the Power Analyzer. `fpga/run_quartus.sh` honours
+`QUARTUS_ROOT` if it installs elsewhere.
+
+Until then everything in [../results/measurements.md](../results/measurements.md)
+runs on Icarus Verilog and yosys, both already installed.

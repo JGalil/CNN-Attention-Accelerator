@@ -7,34 +7,17 @@ integration.
 
 ## Route A — SAIF into Design Compiler (fastest, what `run_power_saif.tcl` expects)
 
-Add to `tb/fullchip_tb.v`, inside the existing stimulus `initial` block:
-
-```verilog
-initial begin
-  // RTL-level toggle monitoring. For a gate-level netlist sim use
-  // $set_gate_level_monitoring("on") instead, so glitches are counted.
-  $set_gate_level_monitoring("rtl_on");
-  $set_toggle_region(fullchip_tb.full_chip_instance);
-
-  // Skip reset and the SRAM preload phase. Including them pollutes the
-  // average with a burst of writes that the real workload does once.
-  wait (reset == 0);
-  repeat (200) @(posedge clk);
-
-  $toggle_start();
-  wait (done_condition);          // end of the last streamed Q vector
-  $toggle_stop();
-
-  $toggle_report("../sim/fullchip.saif", 1.0e-9, fullchip_tb.full_chip_instance);
-end
-```
-
-Then:
+The hooks are already in `tb/fullchip_tb.v`, guarded by `SAIF_DUMP` because
+Icarus does not implement `$toggle_*`. Capture runs from the start of the SFP
+normalisation phase, so the reset and memory preload are excluded.
 
 ```sh
-xrun -f filelist +access+r          # produces fullchip.saif
+xrun -f ../rtl/filelist.txt -define SAIF_DUMP +access+r   # writes fullchip.saif
 cd ../syn && dc_shell-xg-t -f run_power_saif.tcl
 ```
+
+For a gate-level netlist sim change `$set_gate_level_monitoring("rtl_on")` to
+`"on"` so glitch toggles are counted.
 
 Check `log/fullchip_saif.rep` first. If register/net annotation is not close to
 100%, the unannotated remainder is still being estimated and any "savings" you
@@ -48,7 +31,7 @@ gating actually shuts off, and it does not exist until after CTS.
 ```tcl
 # after route, in place of the bare report_power in reportDesign.tcl
 read_activity_file -format VCD ../sim/fullchip_tb.vcd \
-    -scope fullchip_tb/full_chip_instance \
+    -scope fullchip_tb/fullchip_instance \
     -start 200ns -end 5000ns -block $design
 
 set_power_analysis_mode -method dynamic_vectorbased -disable_static false

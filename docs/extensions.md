@@ -1,253 +1,167 @@
-# Possible extensions
+# Extensions
 
-Ordered by value-per-effort. Everything in tiers 1–2 is doable with only Icarus
-Verilog and Quartus Prime Lite; nothing needs the ASIC tools.
+Status of the backlog. Measurements for everything marked done are in
+[../results/measurements.md](../results/measurements.md).
 
-Items marked **[bug]** are defects found while reading the RTL, not speculative
-improvements. Fix those first — some of them invalidate results you already have.
-
----
-
-## Tier 1 — correctness, and results that are currently wrong
-
-### 1.1 **[bug]** `sync_mb.v` has no working reset
-
-```verilog
-always @ (posedge clk or posedge reset) begin
-    if(reset) begin
-        int1 = 0;        // blocking
-        int2 = 0;
-    end
-    int1 <= in;          // runs unconditionally, overrides the above
-    int2 <= int1;
-end
-```
-
-The reset branch uses blocking assignments and then falls through to the
-non-blocking ones, which always execute. The blocking writes are overwritten in
-the same evaluation, so **reset does nothing**. This is the CDC synchroniser for
-both async FIFO pointers, so on reset the gray pointers are whatever `in`
-happened to be — the FIFOs can come up non-empty. It has not bitten you because
-both cores currently run on the same clock and the testbench holds reset long
-enough for the garbage to flush.
-
-```verilog
-always @ (posedge clk or posedge reset) begin
-    if (reset) begin
-        int1 <= 0;
-        int2 <= 0;
-    end else begin
-        int1 <= in;
-        int2 <= int1;
-    end
-end
-```
-
-### 1.2 **[bug]** `async_gray_fifo.v` drives one register array from two clock domains
-
-The FIFO storage is written in the write domain:
-
-```verilog
-always @(posedge wr_clk or posedge wr_rst)
-    ... fifo[wr_ptr[addr-1:0]] <= wr_data;
-```
-
-and cleared in the read domain:
-
-```verilog
-always @(posedge rd_clk or posedge rd_rst)
-    if (rd_rst) for (i...) fifo[i] <= 0;
-```
-
-The same `fifo` array has two drivers on two different clocks. That is a
-multiple-driver error for synthesis and defeats the entire point of the gray-code
-pointer scheme — the payload is supposed to be written in one domain and read
-combinationally in the other, never reset from the far side. Drop the clearing
-loop; an empty FIFO is defined by the pointers, not by zeroed storage. It also
-costs 8 × 20 = 160 flops of reset fanout and prevents RAM inference.
-
-### 1.3 **[bug]** `mac_8in_pl.v` resets registers from a gated clock
-
-In `rtl/experimental/mac_8in_pl.v`:
-
-```verilog
-assign s1_clk = mac_en_q && clk;
-always @ (posedge s1_clk) begin
-    if (reset) begin product0_q <= 0; ... end
-```
-
-`reset` is synchronous to `s1_clk`, which is gated off by `mac_en_q`. If the MAC
-is idle during reset — the normal case, since `mac_en` is derived from data being
-non-zero — **the pipeline registers never reset**.
-
-Worse, `add_0_3_q` and `add_4_7_q` are assigned in *two* always blocks (the
-`s1_clk` reset branch and the whole `s2_clk` block), so they have two drivers on
-two different gated clocks. This variant cannot synthesise correctly as written.
-Use an async reset on the ungated `clk`, and assign each register in exactly one
-block.
-
-### 1.4 **[bug]** `async_gray_fifo.v` depth comment contradicts the parameter
-
-`parameter addr = 3` gives depth 8; the comment says `2^4 = 16`. Harmless today
-but it is the kind of thing that turns into an off-by-8 later.
-
-### 1.5 Restore the stripped attribution header on `sfp_row.v`
-
-`step6`'s `sfp_row.v` had the course header removed while the file still contains
-course-provided structure. See `NOTICE.md` — put it back.
-
-### 1.6 Make the synthesis script fail loudly on black boxes
-
-The single highest-value change to the ASIC flow, and the reason the step5/step6
-power numbers are meaningless. `syn/run_power_saif.tcl` already does this; fold
-the same check into `run_dc.tcl`, and add the missing `analyze` lines for
-`mc_div.v`, `async_gray_fifo.v` and `sync_mb.v`. See
-[clock-gating-power.md](clock-gating-power.md) §2.
+| | item | status |
+|---|---|---|
+| 1.1 | `sync_mb` reset was a no-op | done |
+| 1.2 | FIFO array driven from two clock domains | done |
+| 1.3 | pipelined MAC reset off a gated clock, double-driven registers | done, as part of 3.6 |
+| 1.4 | FIFO depth comment | done |
+| 1.5 | `sfp_row` attribution header | done |
+| 1.6 | synthesis could not fail on black boxes | done |
+| 2.1 | operand isolation defects | done |
+| 2.2 | recomputed weight-zero comparator | done |
+| 2.3 | hand-rolled clock gater | done |
+| 2.4 | activity-annotated power | hooks in place; needs a tool |
+| 2.5 | sparsity sweep | done |
+| 3.1 | fake multi-cycle divider | done |
+| 3.2 | memory inference | done |
+| 3.3 | exercise the CDC | done for the data path; control bus open |
+| 3.4 | skip granularity | done |
+| 3.5 | structural zeros in the MAC array | done, reframed — see below |
+| 3.6 | pipelined MAC | done |
+| 3.7 | quantify | done for area and activity; power and Fmax need a tool |
 
 ---
 
-## Tier 2 — the power story, done properly
+## What changed
 
-### 2.1 Fix the two operand-isolation defects
+### Tier 1 — bugs
 
-Measured in [clock-gating-power.md](clock-gating-power.md) §5:
+**1.1** `sync_mb` wrote its reset values with blocking assignments and then fell
+through to unconditional non-blocking ones, so the reset values were overwritten
+in the same evaluation and reset did nothing.
 
-- Isolating the **stationary** operand (`mac_key_in`) makes a quiet bus 85%
-  busier. Delete that mux.
-- The isolation is applied **twice**, once on 64-bit operands in `mac_col.v` and
-  again per-lane in `mac_8in.v`. The second layer changes nothing on the A side
-  and is 22% worse on the B side, while costing 128 mux cells per column. Delete
-  it.
-- Remove the dead `a_zero` / `b_zero` wires in `mac_8in.v`.
+Worth being precise about the impact: the fault is **masked in this design**. The
+synchronised value is a gray-coded pointer that is itself reset to zero by the
+same reset, so the two-stage pipeline flushes to zero within two cycles either
+way. `tb/tb_cdc.v` does not distinguish the two versions, including under
+staggered reset release. The fix is still required — the code claimed a reset it
+did not perform, and the masking is a property of the caller, not of `sync_mb` —
+but it did not fix an observable failure. The synchroniser now also carries
+`ASYNC_REG`/`preserve` so the two stages are not merged or retimed.
 
-Expected: strictly less area and strictly less activity, with identical function.
-`make -C sim compare` will confirm it.
+**1.2** The FIFO storage was written in the write domain and cleared in the read
+domain: two drivers on two different clocks. The clearing loop is gone;
+emptiness is defined by the pointers, and the single write driver is what allows
+RAM inference.
 
-### 2.2 Register the weight-zero flag instead of recomputing it
+**1.3** Folded into 3.6 rather than fixed separately, since 3.6 rewrites the file.
 
-`weight_zero = (key_q == 0)` is a 64-bit compare evaluated every cycle, but
-`key_q` only changes on a weight load. Compute it once at load time and register
-it — one flop replaces a continuously-powered comparator. (Its *output* barely
-toggles, so the win is the OR-tree's internal switching and its area, not output
-activity.)
+**1.6** `run_dc.tcl` checked `is_unmapped` on `$top_module` only, so a
+black-boxed sub-block was never reported — which is why the step5/step6 power
+reports went unnoticed. It now checks every design, checks for `tri` nets, and
+exits non-zero. The `analyze` list was also hand-maintained and had drifted;
+`rtl/filelist.txt` is now the single source of truth read by `syn/run_dc.tcl`,
+`fpga/gen_qsf.py` and `sim/Makefile`, so a new module cannot be missing from one
+of them.
 
-### 2.3 Let the tool infer integrated clock gaters
+### Tier 2 — power
 
-Delete the hand-rolled latch+AND from `mac_col.v` and use
-`syn/clock_gating_setup.tcl` with `compile_ultra -gate_clock`. Glitch-free,
-CTS-aware, checked, and visible to `report_clock_gating`. On FPGA the equivalent
-is register clock-enable, which `AUTO_CLOCK_ENABLE_RECOGNITION ON` infers from
-the enable conditions already present — a hand-built gated clock on Cyclone IV is
-actively harmful.
+**2.1 / 2.2 / 2.3** done as one rewrite of `mac_col`/`mac_8in`, since 2.3 deletes
+the lines the other two sit next to. The hand-rolled latch+AND is replaced by a
+register enable, which Design Compiler converts to an integrated clock gating
+cell under `-gate_clock` and Quartus maps to the LE register clock-enable.
+Operand isolation applies only to the streaming operand, the duplicate per-lane
+layer in `mac_8in` is gone along with the dead `a_zero`/`b_zero` wires, and the
+weight-zero flag is registered at load time instead of recomputed from a 64-bit
+compare every cycle.
 
-### 2.4 Close the loop on activity-annotated power
+**2.4** The `$toggle_*` hooks are in `tb/fullchip_tb.v` behind `SAIF_DUMP`
+(Icarus does not implement them), capture bounded to the compute phase.
+`syn/run_power_saif.tcl` annotates the SAIF and refuses to report power if any
+block is unmapped. Running it needs Design Compiler; the Quartus equivalent is
+already configured in the `.qsf`.
 
-`syn/run_power_saif.tcl` + `sim/gen_saif.md` for the ASIC flow;
-`POWER_USE_INPUT_FILE VCD` (already in the `.qsf`) for Quartus. Then re-run the
-step4-vs-step6 comparison with matched core counts and publish a table that
-means something.
+**2.5** `sim/gen_stimulus.py` plus `sim/sweep.sh`. Both element-level and
+whole-column sparsity, every point re-verified.
 
-### 2.5 Sweep sparsity to find the break-even point
+### Tier 3 — architecture
 
-The interesting result is not one number but the curve. Parameterise the
-testbench's stimulus generator by weight sparsity, sweep 0–90%, and plot activity
-against it for gated and ungated builds. That is the plot that answers "is the
-gating worth its area?" and it needs no licence at all — `vcd_activity.py`
-produces every point.
+**3.1** `seq_div` replaces `mc_div`: restoring division, two quotient bits per
+cycle, exact against Verilog's `/` and saturating above 2^qw−1. 3.0× fewer cells
+and 4.5× shorter logic depth, at the same 5-cycle cadence.
+
+Reciprocal-once-then-multiply was considered and rejected: the testbench's
+reference model is exact truncating division, and a reciprocal multiply differs by
+an LSB unless a correction step is added, which costs a second multiplier per
+lane. Changing the reference model to match an approximation would have been
+moving the goalposts. Shift-based normalisation is still open as an accuracy/area
+trade if the row norm may be rounded to a power of two — that is a numerical
+question to settle against the model first.
+
+`qw` is sized from the application bound rather than the operand width: the
+dividend is one `|psum|` and the divisor is the row norm shifted right by 7, so
+the quotient cannot exceed about 160 and 8 bits suffice. This is what keeps the
+latency inside the host's handshake window.
+
+**3.2** The asynchronous reset on the storage array is gone, so the memories
+infer. 9,216 flops across the design become 6 memories and 576 flops. The reset
+port is retained and clears the output register, which is all a memory can
+meaningfully reset.
+
+**3.3** `fullchip` now takes `clk2` for core 2, and the row-sum FIFOs cross
+between the two domains. `tb/tb_cdc.v` drives the FIFO across six clock ratios
+and three staggered-reset cases.
+
+**Still open, and the reason `clk2` must currently be driven from `clk`:** the
+instruction bus is not synchronised. `inst` is driven in the `clk` domain and
+consumed by both cores, so `write_sum_out` (`inst[19]`) reaches core 2
+unsynchronised. Running the two domains genuinely asynchronously needs either a
+second instruction port or a command FIFO into core 2. The *data* path between
+cores is safe; the control path is not.
+
+**3.4** `skip_thresh` is a runtime input rather than a `localparam`, so the
+accuracy/power trade is tunable without a rebuild. Per-lane gating holds the
+divider datapath for any lane whose magnitude is zero, since that lane
+normalises to zero for any divisor. Note the lanes deliberately stay in lockstep
+on the control path — only the wide datapath is gated — so that one `done` is a
+valid reference for all of them.
+
+**3.5 — reframed.** The original text proposed advancing the instruction stream
+past a zero column. That is wrong for this architecture: all eight columns
+compute in parallel on the streamed query, so skipping one saves no cycles. A
+zero-weight column also cannot stop clocking, because it relays the query to the
+next column through `q_out`.
+
+What it *can* do is suppress its own product for as long as those weights are
+loaded. That is what is implemented: the registered `key_zero_q` isolates the
+query operand into the multiplier and forces the column's psum to zero at the
+source, and `col_active` exports the flag. The sweep in §5 of the measurements
+shows whole-column sparsity is worth roughly twice as much as the same fraction
+spread over individual weights.
+
+Converting sparsity into throughput rather than power would need a different
+dataflow — output-stationary, or a compressed weight format that lets the host
+skip issuing work — which is a larger change than this item.
+
+**3.6** `mac_8in_pl` rewritten with a parameterisable depth (`stages` 1–3),
+register-enable gating on the ungated clock, asynchronous reset independent of
+`en`, and one always block per register. `mac_col_pipelined.v` delays the
+output-valid instruction by the pipeline depth so `fifo_wr` still lines up.
+
+It remains experimental rather than default, and the reasoning is unchanged: the
+design is constrained at 10 ns, where the combinational MAC closes with large
+margin, so the extra registers buy nothing. It is here for retargeting to a
+faster clock. Whether that is worth doing should be decided from a real Fmax
+number, which needs Quartus.
 
 ---
 
-## Tier 3 — architecture
+## Remaining work
 
-### 3.1 Replace the fake multi-cycle divider
-
-`mc_div.v` is the biggest structural liability in the design:
-
-```verilog
-assign quotient_c = dividend / divisor;   // full combinational divide
-...
-if (count == cycles) quotient_q <= quotient_c;
-```
-
-The `cycles` counter does not pipeline anything — it waits four cycles and then
-samples a purely combinational 20-bit divide. The critical path still contains a
-whole divider, ×8 instances per core, ×2 cores. On FPGA this infers 16
-`LPM_DIVIDE` blocks and will set your Fmax.
-
-Options, cheapest first:
-
-- **Shift-based normalisation.** The SFP divides by a row sum to normalise. If
-  you round the divisor to a power of two you replace all 16 dividers with
-  barrel shifters. For an attention weight feeding an 8-bit datapath the accuracy
-  cost is likely negligible — quantify it against the testbench's reference model
-  before committing.
-- **Reciprocal once, multiply eight times.** All 8 lanes share one divisor. Compute
-  `1/sum` once (LUT or Newton–Raphson) and replace 8 dividers with 1 reciprocal
-  and 8 multipliers.
-- **A real iterative divider.** Restoring or non-restoring, one quotient bit per
-  cycle. Genuinely multi-cycle, and short-path.
-
-Also: **divide-by-zero is unhandled.** `sum == 0` is reachable whenever a whole
-row is zero — which the skip path already detects, so the guard exists but the
-divider does not rely on it.
-
-### 3.2 Let `sram_w16.v` infer real memory
-
-The async reset on the memory array blocks block-RAM inference on FPGA and forces
-a flop array on ASIC: 16 × 160 bits = 2560 flops for the psum memory alone, plus
-a 16-way 160-bit mux. Drop the array reset (or make it synchronous and
-write-enable gated) and the psum memory becomes one M9K. This is probably the
-single largest area and power win available, and it is a handful of lines.
-
-### 3.3 Actually exercise the CDC
-
-`fullchip.v` contains two async gray-code FIFOs and two synchronisers, then ties
-both cores to the same clock:
-
-```verilog
-assign core1_clk = clk;
-assign core2_clk = clk;
-```
-
-So the CDC machinery you built is never tested in the condition it exists for.
-Add a second clock, run core 2 at a different frequency, and the FIFOs start
-earning their keep — and the reset bug in 1.1 will show up immediately. This is
-also the most defensible extension to write up, because the hardware is already
-there.
-
-### 3.4 Skip at column granularity, not chip granularity
-
-The `SKIP_GATING_THRESH = 660` check in `sfp_row.v` skips the division for a
-whole row when the sum is below threshold. On the current workload it fires on 4
-of 8 cycles. Two refinements:
-
-- Make the threshold a runtime input rather than a `localparam`, so it is a
-  tunable accuracy/power knob instead of a magic number.
-- Skip *per lane*: a row can have a large sum while individual `abs` values are
-  negligible.
-
-### 3.5 Exploit structural zeros in the MAC array
-
-Operand isolation suppresses toggling but the multiplier still exists and is
-still clocked. With real sparsity you can skip the *cycle*: if a whole column's
-weights are zero, advance the instruction stream past it. That converts a power
-saving into a throughput saving, which is a better trade. This is what the
-teammate's "80% of MACs skipped" number refers to and it is a much stronger
-result than isolation alone.
-
-### 3.6 Revisit the pipelined MAC
-
-`rtl/experimental/mac_8in_pl.v` claims 0.45 ns (2.22 GHz) typical in its header
-comment against the 10 ns period the design is constrained to — a 20× timing
-margin that suggests the constraint, not the MAC, is what limits you. Fix the
-bugs in 1.3, then either retarget the whole design to a much faster clock (where
-the pipelined MAC pays for itself) or drop the variant. Running a 2.2 GHz-capable
-MAC at 100 MHz is pure wasted area.
-
-### 3.7 Quantify, don't assert
-
-The teammate's README quotes 23.9 GOPS and 138 GOPS/W. This design has no
-comparable published figure because its only power numbers came from the broken
-runs. Once 2.4 is done, a matched table (throughput, area, power, GOPS/W, at a
-stated sparsity and a stated clock, measured not estimated) is the single most
-useful thing to add to the README.
+1. **Power in milliwatts.** Needs Quartus (`fpga/run_quartus.sh power`, already
+   configured to read a VCD) or a PDK with Design Compiler
+   (`syn/run_power_saif.tcl`). Everything on the tool side is in place.
+2. **Fmax.** `fpga/run_quartus.sh fit`. This also decides 3.6 and tells you
+   whether the 10 ns constraint was ever the real limit.
+3. **Synchronise the instruction bus into core 2**, so `clk2` can actually run
+   asynchronously. A command FIFO reusing `async_gray_fifo` is the obvious route.
+4. **Gate-level activity.** RTL simulation has no delays, so glitch power is
+   absent and large combinational blocks are undercounted. A post-fit gate-level
+   VCD from Questa would fix both and make the divider comparison direct rather
+   than inferred from cell counts.
+5. **Shift-based normalisation**, if the accuracy cost measures acceptable
+   against the reference model — the remaining large arithmetic simplification.
