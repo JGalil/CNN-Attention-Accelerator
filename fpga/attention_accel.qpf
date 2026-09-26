@@ -1,0 +1,5 @@
+QUARTUS_VERSION = "23.1"
+DATE = "2026/09/26"
+
+# Revisions
+PROJECT_REVISION = "attention_accel"

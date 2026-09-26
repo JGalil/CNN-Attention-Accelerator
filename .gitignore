@@ -1,0 +1,67 @@
+# ---------------------------------------------------------------------------
+# Vendor PDK and anything derived from it. See NOTICE.md -- none of this may
+# be committed. Kept deliberately broad.
+# ---------------------------------------------------------------------------
+*.gds2
+*.gds
+*.def
+*.sdf
+*.lib
+*.db
+*.lef
+*.captable
+*.out.v
+*.pnr.v
+tcbn*
+cln65*
+*PDKdata*
+*DESIGNdata*
+
+# Cadence / Synopsys work areas
+xcelium.d/
+worklib/
+.template/
+template/
+*.enc.dat/
+*.enc
+simvision*/
+.simvision/
+waves.shm/
+*.trn
+*.dsn
+*.svcf
+*.diag
+compiled
+log/
+timingReports/
+
+# Quartus
+fpga/db/
+fpga/incremental_db/
+fpga/output_files/
+fpga/simulation/
+*.qws
+*.rpt
+*.summary
+*.sof
+*.pof
+*.jdi
+*.pin
+*.smsg
+*.done
+
+# Simulation outputs -- VCDs are large and regenerable via `make -C sim`
+*.vcd
+*.vvp
+*.saif
+*.fsdb
+*.shm
+sim/build/
+sim/build_*/
+*.gtkw
+
+# Editor / OS
+*.swp
+*~
+.DS_Store
+__pycache__/
