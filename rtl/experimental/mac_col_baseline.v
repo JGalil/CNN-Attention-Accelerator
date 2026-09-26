@@ -1,6 +1,6 @@
 // Created by prof. Mingu Kang @VVIP Lab in UCSD ECE department
-// Please do not spread this code without permission 
-module mac_col (clk, reset, out, q_in, q_out, i_inst, fifo_wr, o_inst);
+// Pre-optimisation reference, retained for A/B activity comparison 
+module mac_col (clk, reset, out, q_in, q_out, i_inst, fifo_wr, o_inst, col_active);
 
 parameter bw = 8;
 parameter bw_psum = 2*bw+6;
@@ -14,6 +14,8 @@ input  clk, reset;
 input  [1:0] i_inst; // [1]: execute, [0]: load 
 output [1:0] o_inst; // [1]: execute, [0]: load 
 output fifo_wr;
+output col_active;              // tied high: this variant performs no gating
+assign col_active = 1'b1;
 reg    load_ready_q;
 reg    [3:0] cnt_q;
 reg    [1:0] inst_q;

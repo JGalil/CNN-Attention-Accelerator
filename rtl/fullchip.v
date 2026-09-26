@@ -1,6 +1,6 @@
 // Created by prof. Mingu Kang @VVIP Lab in UCSD ECE department
 // Please do not spread this code without permission 
-module fullchip (clk, mem_in_1, mem_in_2, inst, reset, pmem_out_1, pmem_out_2, sfp_out_1, sfp_out_2, div_done_1, div_done_2);
+module fullchip (clk, mem_in_1, mem_in_2, inst, reset, pmem_out_1, pmem_out_2, sfp_out_1, sfp_out_2, div_done_1, div_done_2, skip_thresh);
 
 parameter col = 8;
 parameter bw = 8;
@@ -12,6 +12,7 @@ input  [pr*bw-1:0] mem_in_1;
 input  [pr*bw-1:0] mem_in_2; 
 input  [19:0] inst; 
 input  reset;
+input  [bw_psum+3:0] skip_thresh;   // SFP row-norm skip threshold
 // output [bw_psum+3:0] sum_out;
 output [bw_psum*col-1:0] sfp_out_1;
 output [bw_psum*col-1:0] sfp_out_2;
@@ -63,6 +64,7 @@ core #(.bw(bw), .bw_psum(bw_psum), .col(col), .pr(pr)) core_instance1 (
       .sum_in(sum_in_core1),
       .sfp_out(sfp_out_1),
       .fifo_ext_rd(fifo_ext_rd_core1),
+      .skip_thresh(skip_thresh),
       .div_done(div_done_1)
 );
 
@@ -76,6 +78,7 @@ core #(.bw(bw), .bw_psum(bw_psum), .col(col), .pr(pr)) core_instance2 (
       .sum_in(sum_in_core2),
       .sfp_out(sfp_out_2),
       .fifo_ext_rd(fifo_ext_rd_core2),
+      .skip_thresh(skip_thresh),
       .div_done(div_done_2)
 );
 

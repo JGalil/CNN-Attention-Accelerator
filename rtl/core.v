@@ -1,6 +1,6 @@
 // Created by prof. Mingu Kang @VVIP Lab in UCSD ECE department
 // Please do not spread this code without permission 
-module core (clk, fifo_ext_rd, div_done, sum_out, sum_in, mem_in, sfp_out, inst, reset, pmem_out);
+module core (clk, fifo_ext_rd, div_done, sum_out, sum_in, mem_in, sfp_out, inst, reset, pmem_out, skip_thresh);
 
 parameter col = 8;
 parameter bw = 8;
@@ -12,6 +12,7 @@ output [bw_psum*col-1:0] sfp_out;
 output [bw_psum*col-1:0] pmem_out;
 output div_done;
 input [bw_psum+3:0] sum_in;
+input [bw_psum+3:0] skip_thresh;
 input  [pr*bw-1:0] mem_in;
 input  clk;
 input  [19:0] inst; 
@@ -28,6 +29,7 @@ wire  [bw_psum*col-1:0] fifo_out;
 // wire  [bw_psum*col-1:0] sfp_out;
 wire  [bw_psum*col-1:0] array_out;
 wire  [col-1:0] fifo_wr;
+wire  [col-1:0] col_active;
 wire  ofifo_rd;
 wire [3:0] qkmem_add;
 wire [3:0] pmem_add;
@@ -61,13 +63,30 @@ assign pmem_in = fifo_out;
 
 assign pmem_out = pmem_result;
 
+// The psum memory read is registered, so a new row appears on pmem_result one
+// cycle after its address is presented. row_valid marks that cycle and paces
+// the SFP at one division per row.
+reg [3:0] pmem_add_q;
+reg       row_valid;
+always @(posedge clk or posedge reset) begin
+  if (reset) begin
+    pmem_add_q <= 0;
+    row_valid  <= 0;
+  end
+  else begin
+    pmem_add_q <= pmem_add;
+    row_valid  <= (pmem_add != pmem_add_q);
+  end
+end
+
 
 mac_array #(.bw(bw), .bw_psum(bw_psum), .col(col), .pr(pr)) mac_array_instance (
         .in(mac_in), 
         .clk(clk), 
         .reset(reset), 
-        .inst(inst[7:6]),     
-        .fifo_wr(fifo_wr),     
+        .inst(inst[7:6]),
+        .fifo_wr(fifo_wr),
+        .col_active(col_active),
 	.out(array_out)
 );
 
@@ -119,7 +138,9 @@ sfp_row #(.col(col), .bw(bw), .bw_psum(bw_psum)) sfp_instance (
         .acc(acc),
         .div(div),
         .fifo_ext_rd(fifo_ext_rd),
-        .sum_in(sum_in), // set to 0 until duel core
+        .sum_in(sum_in),
+        .skip_thresh(skip_thresh),
+        .row_valid(row_valid),
                 .sum_out(sum_out),
                 .sfp_out(sfp_out),
 		.reset(reset),

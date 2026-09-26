@@ -1,187 +1,152 @@
-module sfp_row (clk, acc, div, div_done, fifo_ext_rd, sum_in, sum_out, sfp_in, sfp_out, reset);
+// Created by prof. Mingu Kang @VVIP Lab in UCSD ECE department
+// Modified: sequential dividers, runtime skip threshold, per-lane gating.
+//
+// Normalises a row of partial sums by the L1 norm of the row taken across both
+// cores. Rows whose norm falls below skip_thresh are emitted as zero without
+// running the dividers.
+module sfp_row (clk, acc, div, div_done, fifo_ext_rd, sum_in, sum_out,
+                sfp_in, sfp_out, reset, skip_thresh, row_valid);
 
   parameter col = 8;
   parameter bw = 8;
   parameter bw_psum = 2*bw+4;
+  parameter qw = 8;                     // quotient bits; see seq_div
 
-  localparam SKIP_GATING_THRESH = 660;
- 
   input  clk, div, acc, fifo_ext_rd;
+  input  reset;
+  input  row_valid;                     // a new row's psum is stable on sfp_in
   input  [bw_psum+3:0] sum_in;
+  input  [bw_psum+3:0] skip_thresh;     // runtime accuracy/power knob
   input  [col*bw_psum-1:0] sfp_in;
-  input reset;
-  wire  [col*bw_psum-1:0] abs;
-  reg    div_q;
   output [col*bw_psum-1:0] sfp_out;
   output [bw_psum+3:0] sum_out;
   output div_done;
+
+  wire [col*bw_psum-1:0] abs;
+  wire [bw_psum+3:0] abs_ext [0:col-1];  // zero-extended, for the row sum
+  wire [col*bw_psum-1:0] quotient_flat;
+  wire [col-1:0] done;
+  wire [col-1:0] lane_en;
+
+  reg  [col*bw_psum-1:0] sfp_out_q;
+  reg  [bw_psum+3:0] sum_q;
+  reg  div_q;
+  reg  fifo_wr;
+
+  reg  busy;                            // one division in flight
+  reg  res_valid;                       // sfp_out_q corresponds to the current row
+  reg  done_pulse;                      // single-cycle completion
+  reg  row_skipped;                     // this row took the skip path
+
   wire [bw_psum+3:0] sum_this_core;
-  wire signed [bw_psum-1:0] sum_2core;
-  wire signed [bw_psum-1:0] sfp_in_sign0;
-  wire signed [bw_psum-1:0] sfp_in_sign1;
-  wire signed [bw_psum-1:0] sfp_in_sign2;
-  wire signed [bw_psum-1:0] sfp_in_sign3;
-  wire signed [bw_psum-1:0] sfp_in_sign4;
-  wire signed [bw_psum-1:0] sfp_in_sign5;
-  wire signed [bw_psum-1:0] sfp_in_sign6;
-  wire signed [bw_psum-1:0] sfp_in_sign7;
+  wire [bw_psum+3:0] row_norm = sum_this_core + sum_in;
+  wire [bw_psum-1:0] divisor  = row_norm >> 7;
 
+  wire skip = (row_norm < skip_thresh);
 
-  reg signed [bw_psum-1:0] sfp_out_sign0;
-  reg signed [bw_psum-1:0] sfp_out_sign1;
-  reg signed [bw_psum-1:0] sfp_out_sign2;
-  reg signed [bw_psum-1:0] sfp_out_sign3;
-  reg signed [bw_psum-1:0] sfp_out_sign4;
-  reg signed [bw_psum-1:0] sfp_out_sign5;
-  reg signed [bw_psum-1:0] sfp_out_sign6;
-  reg signed [bw_psum-1:0] sfp_out_sign7;
+  // One division per row. res_valid is cleared when a new row arrives and set
+  // when its result is captured, so need_div is asserted exactly once per row
+  // and the dividers cannot restart on stale data.
+  wire need_div  = div_q && !res_valid && !busy;
+  wire start_div = need_div && !skip;
 
-  reg [bw_psum+3:0] sum_q;
-  reg fifo_wr;
-  wire [7:0] done;
-  wire [7:0][bw_psum-1:0] quotient_out;
+  assign sfp_out  = sfp_out_q;
 
-  wire skip;
-  wire skip_inst;
-  wire [bw_psum-1:0]   gated_divisor;
-  wire [col*bw_psum-1:0] gated_abs;
+  // A single-cycle pulse: div_done also advances the row-norm FIFOs, which must
+  // step once per row, and it marks sfp_out_q as this row's result.
+  assign div_done = done_pulse;
 
-  assign sfp_in_sign0 =  sfp_in[bw_psum*1-1 : bw_psum*0];
-  assign sfp_in_sign1 =  sfp_in[bw_psum*2-1 : bw_psum*1];
-  assign sfp_in_sign2 =  sfp_in[bw_psum*3-1 : bw_psum*2];
-  assign sfp_in_sign3 =  sfp_in[bw_psum*4-1 : bw_psum*3];
-  assign sfp_in_sign4 =  sfp_in[bw_psum*5-1 : bw_psum*4];
-  assign sfp_in_sign5 =  sfp_in[bw_psum*6-1 : bw_psum*5];
-  assign sfp_in_sign6 =  sfp_in[bw_psum*7-1 : bw_psum*6];
-  assign sfp_in_sign7 =  sfp_in[bw_psum*8-1 : bw_psum*7];
+  // Magnitude of each lane's partial sum.
+  genvar i;
+  generate
+    for (i = 0; i < col; i = i + 1) begin : abs_lane
+      wire signed [bw_psum-1:0] v = sfp_in[bw_psum*(i+1)-1 : bw_psum*i];
+      assign abs[bw_psum*(i+1)-1 : bw_psum*i] = v[bw_psum-1] ? (~v + 1'b1) : v;
 
+      assign abs_ext[i] = {4'b0, abs[bw_psum*(i+1)-1 : bw_psum*i]};
 
-  assign sfp_out[bw_psum*1-1 : bw_psum*0] = sfp_out_sign0;
-  assign sfp_out[bw_psum*2-1 : bw_psum*1] = sfp_out_sign1;
-  assign sfp_out[bw_psum*3-1 : bw_psum*2] = sfp_out_sign2;
-  assign sfp_out[bw_psum*4-1 : bw_psum*3] = sfp_out_sign3;
-  assign sfp_out[bw_psum*5-1 : bw_psum*4] = sfp_out_sign4;
-  assign sfp_out[bw_psum*6-1 : bw_psum*5] = sfp_out_sign5;
-  assign sfp_out[bw_psum*7-1 : bw_psum*6] = sfp_out_sign6;
-  assign sfp_out[bw_psum*8-1 : bw_psum*7] = sfp_out_sign7;
+      // A zero magnitude normalises to zero for any divisor, so the lane's
+      // datapath is held rather than computing a known result.
+      assign lane_en[i] = ~skip && (abs[bw_psum*(i+1)-1 : bw_psum*i] != 0);
 
+      seq_div #(.dw(bw_psum), .qw(qw)) div_lane (
+        .clk(clk),
+        .reset(reset),
+        .start(start_div),
+        .en(lane_en[i]),
+        .dividend(abs[bw_psum*(i+1)-1 : bw_psum*i]),
+        .divisor(divisor),
+        .quotient(quotient_flat[bw_psum*(i+1)-1 : bw_psum*i]),
+        .done(done[i])
+      );
+    end
+  endgenerate
 
-  // assign sum_2core = sum_this_core[bw_psum+3:6] + sum_in[bw_psum+3:6]; //shift sum right by 6 so we don't get fractions
-  assign sum_2core = (sum_this_core + sum_in) >> 7; //shift sum right by 6 so we don't get fractions
-  assign skip = (sum_this_core + sum_in) < SKIP_GATING_THRESH;
-  assign skip_inst = div_q && skip;
-  assign div_done = done[0] || skip_inst;
-
-  assign abs[bw_psum*1-1 : bw_psum*0] = (sfp_in[bw_psum*1-1]) ?  (~sfp_in[bw_psum*1-1 : bw_psum*0] + 1)  :  sfp_in[bw_psum*1-1 : bw_psum*0];
-  assign abs[bw_psum*2-1 : bw_psum*1] = (sfp_in[bw_psum*2-1]) ?  (~sfp_in[bw_psum*2-1 : bw_psum*1] + 1)  :  sfp_in[bw_psum*2-1 : bw_psum*1];
-  assign abs[bw_psum*3-1 : bw_psum*2] = (sfp_in[bw_psum*3-1]) ?  (~sfp_in[bw_psum*3-1 : bw_psum*2] + 1)  :  sfp_in[bw_psum*3-1 : bw_psum*2];
-  assign abs[bw_psum*4-1 : bw_psum*3] = (sfp_in[bw_psum*4-1]) ?  (~sfp_in[bw_psum*4-1 : bw_psum*3] + 1)  :  sfp_in[bw_psum*4-1 : bw_psum*3];
-  assign abs[bw_psum*5-1 : bw_psum*4] = (sfp_in[bw_psum*5-1]) ?  (~sfp_in[bw_psum*5-1 : bw_psum*4] + 1)  :  sfp_in[bw_psum*5-1 : bw_psum*4];
-  assign abs[bw_psum*6-1 : bw_psum*5] = (sfp_in[bw_psum*6-1]) ?  (~sfp_in[bw_psum*6-1 : bw_psum*5] + 1)  :  sfp_in[bw_psum*6-1 : bw_psum*5];
-  assign abs[bw_psum*7-1 : bw_psum*6] = (sfp_in[bw_psum*7-1]) ?  (~sfp_in[bw_psum*7-1 : bw_psum*6] + 1)  :  sfp_in[bw_psum*7-1 : bw_psum*6];
-  assign abs[bw_psum*8-1 : bw_psum*7] = (sfp_in[bw_psum*8-1]) ?  (~sfp_in[bw_psum*8-1 : bw_psum*7] + 1)  :  sfp_in[bw_psum*8-1 : bw_psum*7];
-
+  // Row norms for this core: one copy read back locally, one sent to the other
+  // core. Both step on div_done, once per row.
   fifo_depth16 #(.bw(bw_psum+4)) fifo_inst_int (
-     .rd_clk(clk), 
-     .wr_clk(clk), 
-     .in(sum_q),
-     .out(sum_this_core), 
-     .rd(div_done), //done flag from mc_divider tells fifo to send out next. Don't need a signal for first read as fifo out pointer is on it already
-     .wr(fifo_wr), 
-     .reset(reset)
+     .rd_clk(clk), .wr_clk(clk), .in(sum_q), .out(sum_this_core),
+     .rd(div_done), .wr(fifo_wr), .reset(reset)
   );
 
   fifo_depth16 #(.bw(bw_psum+4)) fifo_inst_ext (
-     .rd_clk(clk), 
-     .wr_clk(clk), 
-     .in(sum_q),
-     .out(sum_out), 
-     .rd(fifo_ext_rd), 
-     .wr(fifo_wr), 
-     .reset(reset)
+     .rd_clk(clk), .wr_clk(clk), .in(sum_q), .out(sum_out),
+     .rd(fifo_ext_rd), .wr(fifo_wr), .reset(reset)
   );
 
-  assign gated_divisor = (div_q && !skip) ? sum_2core : 0;
-  assign gated_abs     = (div_q && !skip) ? abs : 0;
-
-  genvar i;
-  generate
-    for (i = 0; i < 8; i = i + 1) begin : mc_div_loop
-        mc_div #(.bw(bw), .bw_psum(bw_psum)) mc_div_instance (
-          .clk(clk),
-          .div(div_q && !skip), // only start division if we're not skipping
-          .reset(reset),
-          .divisor(gated_divisor),
-          .dividend(gated_abs[bw_psum*(i+1)-1 : bw_psum*i]),
-          .done(done[i]),
-          .quotient(quotient_out[i])
-        );
-    end
-    
-  endgenerate
+  // Row L1 norm. Indexing an unpacked array with a loop variable is legal where
+  // a variable part-select of a packed vector is not.
+  reg [bw_psum+3:0] row_sum_c;
+  integer j;
+  always @(*) begin
+    row_sum_c = 0;
+    for (j = 0; j < col; j = j + 1)
+      row_sum_c = row_sum_c + abs_ext[j];
+  end
 
   always @ (posedge clk or posedge reset) begin
     if (reset) begin
-      fifo_wr <= 0;
-      sfp_out_sign0 <= 0;
-      sfp_out_sign1 <= 0;
-      sfp_out_sign2 <= 0;
-      sfp_out_sign3 <= 0;
-      sfp_out_sign4 <= 0;
-      sfp_out_sign5 <= 0;
-      sfp_out_sign6 <= 0;
-      sfp_out_sign7 <= 0;
-      div_q <= 0;
-      sum_q <= 0;
+      fifo_wr    <= 0;
+      sfp_out_q  <= 0;
+      div_q      <= 0;
+      sum_q      <= 0;
+      busy       <= 0;
+      res_valid  <= 0;
+      done_pulse <= 0;
+      row_skipped<= 0;
     end
     else begin
-       div_q <= div;
+      div_q      <= div;
+      done_pulse <= 0;
 
-       if (acc) begin
-      
-         sum_q <= 
-           {4'b0, abs[bw_psum*1-1 : bw_psum*0]} +
-           {4'b0, abs[bw_psum*2-1 : bw_psum*1]} +
-           {4'b0, abs[bw_psum*3-1 : bw_psum*2]} +
-           {4'b0, abs[bw_psum*4-1 : bw_psum*3]} +
-           {4'b0, abs[bw_psum*5-1 : bw_psum*4]} +
-           {4'b0, abs[bw_psum*6-1 : bw_psum*5]} +
-           {4'b0, abs[bw_psum*7-1 : bw_psum*6]} +
-           {4'b0, abs[bw_psum*8-1 : bw_psum*7]} ;
-         fifo_wr <= 1;
-       end
-       else begin
-         fifo_wr <= 0;
+      if (acc) begin
+        sum_q   <= row_sum_c;
+        fifo_wr <= 1;
+      end
+      else begin
+        fifo_wr <= 0;
 
-            if (skip_inst) begin
-              sfp_out_sign0 <= 0;
-              sfp_out_sign1 <= 0;
-              sfp_out_sign2 <= 0;
-              sfp_out_sign3 <= 0;
-              sfp_out_sign4 <= 0;
-              sfp_out_sign5 <= 0;
-              sfp_out_sign6 <= 0;
-              sfp_out_sign7 <= 0;
-            end else if (div_q && done[0]) begin
-                  sfp_out_sign0 <= quotient_out[0];
-                  sfp_out_sign1 <= quotient_out[1];
-                  sfp_out_sign2 <= quotient_out[2];
-                  sfp_out_sign3 <= quotient_out[3];
-                  sfp_out_sign4 <= quotient_out[4];
-                  sfp_out_sign5 <= quotient_out[5];
-                  sfp_out_sign6 <= quotient_out[6];
-                  sfp_out_sign7 <= quotient_out[7];
-            end
+        if (row_valid)
+          res_valid <= 0;
 
-       end
-   end
- end
-
-//  always @(posedge clk) begin
-//     if (div_q) begin
-//         $display("sfp_row: sum_this_core=%0d sum_in=%0d skip=%0b skip_inst=%0b",
-//             sum_this_core, sum_in, skip, skip_inst);
-//     end
-//   end
+        if (start_div) begin
+          busy <= 1;
+        end
+        else if (busy && done[0]) begin
+          busy        <= 0;
+          sfp_out_q   <= quotient_flat;
+          res_valid   <= 1;
+          done_pulse  <= 1;
+          row_skipped <= 0;
+        end
+        else if (need_div && skip) begin
+          sfp_out_q   <= 0;
+          res_valid   <= 1;
+          done_pulse  <= 1;
+          row_skipped <= 1;
+        end
+      end
+    end
+  end
 
 endmodule

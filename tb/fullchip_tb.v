@@ -47,6 +47,7 @@ integer i,j,k,t,p,q,s,u, m;
 
 
 
+reg [bw_psum+3:0] skip_thresh = SKIP_GATING_THRESH;
 reg reset = 1;
 reg clk = 0;
 reg [pr*bw-1:0] mem_in; 
@@ -133,6 +134,7 @@ fullchip #(.bw(bw), .bw_psum(bw_psum), .col(col), .pr(pr)) fullchip_instance (
       .pmem_out_2(pmem_out2),
       .sfp_out_1(sfp_out),
       .sfp_out_2(sfp_out2),
+      .skip_thresh(skip_thresh),
       .div_done_1(div_done_1),
       .div_done_2(div_done_2)
 );
@@ -704,7 +706,8 @@ end
             timeout = timeout + 1;
         end
         #0.5 clk = 1'b0;
-        $display("SFP cycle %0d: waited %0d cycles (skip=%0b)", q, timeout, (timeout == 0));  //see how many cycles were saved
+        $display("SFP cycle %0d: waited %0d cycles (skip=%0b)", q, timeout,
+                 fullchip_tb.fullchip_instance.core_instance1.sfp_instance.row_skipped);
     end
 
     #0.5 clk = 1'b0;
