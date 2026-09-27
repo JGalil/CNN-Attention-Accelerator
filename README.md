@@ -91,10 +91,14 @@ Full tables: **[results/measurements.md](results/measurements.md)**.
 | Memories | **9,216 flops → 6 inferred memories + 576 flops** |
 | Sparsity | array activity ratio falls to 0.90 at 90% whole-column weight sparsity |
 
-Power in milliwatts and Fmax are *not* measured — both need a tool that is not
-currently available here. The activity figures are ratios, and the RTL metric
-cannot see the clock tree, which is where the clock gating actually pays. See §7
-of the measurements for what is and is not established.
+Post-fit on Cyclone IV GX: **17,505 LEs, 9,634 registers, 9,216 block memory
+bits, 67.44 MHz, 174.16 mW core dynamic.** The design does **not** close at
+10 ns (−5.271 ns slack).
+
+**The MAC-column gating does not pay on this target** — against the
+pre-optimisation build it costs +6.1% logic, −9.3% Fmax and +1.2…3.1% core
+dynamic power. Full numbers, causes and the confidence caveat:
+**[results/fpga-quartus.md](results/fpga-quartus.md)**.
 
 ### The original power numbers were invalid
 

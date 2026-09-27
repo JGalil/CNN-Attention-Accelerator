@@ -7,7 +7,7 @@ a virtual pin, and because the RTL list must not drift from the other flows.
 import pathlib, sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-DEVICE, FAMILY = "EP4CE115F29C7", "Cyclone IV E"
+DEVICE, FAMILY = "EP4CGX150DF31I7AD", "Cyclone IV GX"
 
 # Real pins. Everything else on the top level becomes a virtual pin.
 REAL = {"clk", "clk2", "reset"}
@@ -50,12 +50,11 @@ def main():
     L += ["", "set_global_assignment -name SDC_FILE attention_accel.sdc", ""]
 
     L += ["# --- Power analysis ------------------------------------------------------",
-          "# Read per-node toggle rates from a simulation VCD. Without this the",
-          "# analyser uses vectorless estimation at a flat default toggle rate and",
-          "# cannot observe any data-dependent saving.",
-          "set_global_assignment -name POWER_USE_INPUT_FILE VCD",
-          "set_global_assignment -name POWER_INPUT_FILE_NAME ../sim/build/fullchip.vcd",
-          "set_global_assignment -name POWER_VCD_FILTER_GLITCHES ON",
+          "# The VCD is passed on the quartus_pow command line by run_quartus.sh:",
+          "#   quartus_pow <proj> --input_vcd=<file> --vcd_filter_glitches=on",
+          "# POWER_USE_INPUT_FILE accepts only \"No File\"/\"Signal Activity File\"/",
+          "# \"VCD File\" and POWER_INPUT_FILE_NAME requires a section id, so the",
+          "# command line is the simpler route for a plain path.",
           "set_global_assignment -name POWER_REPORT_SIGNAL_ACTIVITY ON",
           "set_global_assignment -name POWER_REPORT_POWER_DISSIPATION ON",
           'set_global_assignment -name POWER_DEFAULT_INPUT_IO_TOGGLE_RATE "12.5 %"',

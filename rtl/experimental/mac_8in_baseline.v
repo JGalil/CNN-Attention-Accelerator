@@ -21,7 +21,6 @@ wire		[2*bw-1:0]	product6	;
 wire		[2*bw-1:0]	product7	;
 
 
-genvar i;
 
 
 assign	product0	=	{{(bw){a[bw*	1	-1]}},	a[bw*	1	-1:bw*	0	]}	*	{{(bw){b[bw*	1	-1]}},	b[bw*	1	-1:	bw*	0	]};

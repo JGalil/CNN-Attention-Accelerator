@@ -318,22 +318,53 @@ Cyclone IV project reported a 64% dynamic reduction where Design Compiler
 reported an increase. The two numbers are not in conflict; they measure different
 things with different methods.
 
-**Quartus gets a VCD, so it is vector-based.** The Power Analyzer
-(`quartus_pow`) accepts a VCD from a post-fit gate-level ModelSim/Questa run and
-uses real per-node toggle rates. With 80% weight sparsity, 80% fewer toggles
-genuinely appear in the VCD, so the reduction is measured. That is the whole
-difference: same optimisation, one flow given the activity data and one flow
-guessing. Without a VCD, `POWER_USE_INPUT_FILE` unset, Quartus falls back to
-vectorless estimation with a flat default toggle rate (12.5%) and becomes just
-as blind as Design Compiler was.
+**Correction — the Cyclone IV numbers were not VCD-annotated either.** An
+earlier revision of this document assumed the teammate's flow fed PowerPlay a
+VCD, and that this was the whole difference. The ECE 284 synthesis reports
+(`Part1_Vanilla/synth/FPGA_Report.pdf`, `Part5_Alpha/.../FPGA_Syn_Final.pdf`)
+show otherwise. Both Power Analyzer summaries read:
 
-`fpga/attention_accel.qsf` in this repo sets it up the right way:
-
-```tcl
-set_global_assignment -name POWER_USE_INPUT_FILE VCD
-set_global_assignment -name POWER_INPUT_FILE_NAME ../sim/build/fullchip.vcd
-set_global_assignment -name POWER_VCD_FILTER_GLITCHES ON
 ```
+Core Dynamic Thermal Power Dissipation :   0.00 mW
+Core Static  Thermal Power Dissipation : 119.47 mW   (119.86 mW for Alpha 1)
+I/O          Thermal Power Dissipation : 171.97 mW   (173.01 mW for Alpha 1)
+Total        Thermal Power Dissipation : 291.44 mW   (292.87 mW for Alpha 1)
+```
+
+**Core dynamic power is 0.00 mW.** The analyser had no activity data for the
+core at all. The figure quoted as "Dynamic Power — 172 mW / 173 mW" in those
+reports is the **I/O** line, which is pad power across 454 and 458 real pins
+(`Total virtual pins: 0`), not the accelerator's compute power. The derived
+96.6 and 138 GOPS/W therefore divide throughput by pad power.
+
+That resolves the apparent contradiction without needing the VCD explanation:
+**neither flow ever measured core dynamic power.** Design Compiler measured a
+vectorless estimate of a broken netlist; PowerPlay measured pads. Clock gating
+could not have shown up in either, and the "2.78× from weight sparsity" figure
+was, by the project's own notes, a team estimate for a `mac_tile` variant that
+was never wired into the synthesised design.
+
+It also means the two projects' power numbers are not comparable to each other
+or to anything else, and that this repository has no prior number to beat — only
+a method to fix.
+
+**What PowerPlay needs to report core power.** The tool does accept real
+per-node toggle rates; it simply was not given any. Either annotate a VCD:
+
+```sh
+quartus_pow <project> --input_vcd=../sim/build/fullchip.vcd \
+                      --vcd_filter_glitches=on --use_vectorless_estimation=on
+```
+
+(`POWER_USE_INPUT_FILE` in a `.qsf` accepts only `"No File"`,
+`"Signal Activity File"` or `"VCD File"`, and `POWER_INPUT_FILE_NAME` requires a
+section id, so the command line is the simpler route for a plain path — see
+`fpga/run_quartus.sh`.)
+
+Or, failing that, at least enable vectorless estimation so the core is modelled
+at a default toggle rate rather than not at all. And use **virtual pins**: with
+454 real pins the I/O term swamps everything and the core number is what you
+actually wanted.
 
 **But "clock gating" means something different on an FPGA.** There is no ICG
 cell in a Cyclone IV LE. Three things can happen to `wire g_clk = clk & en;`:

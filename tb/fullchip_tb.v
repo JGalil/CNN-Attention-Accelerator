@@ -1,7 +1,11 @@
 // Created by prof. Mingu Kang @VVIP Lab in UCSD ECE department
 // Please do not spread this code without permission 
 
-`timescale 1ns/1ps
+// 10ns time unit so the testbench's half-cycle `#0.5` delays are 5 ns and the
+// clock period is 10 ns, matching the 100 MHz the design is constrained at.
+// With a 1ns unit the simulated clock was 1 GHz, which a power analyser reading
+// the VCD takes at face value and scales dynamic power by.
+`timescale 10ns/1ps
 
 module fullchip_tb;
 

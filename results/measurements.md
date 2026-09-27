@@ -151,15 +151,27 @@ A skipped row costs 3 cycles against 7–8 for a computed one, so the skip saves
 about 5 cycles and one division per row it fires on. The same rows are skipped as
 in the original design.
 
-## 7. Not measured here
+## 7. Measured post-fit — see [fpga-quartus.md](fpga-quartus.md)
 
-- **Power in milliwatts.** Needs either a PDK with Design Compiler
-  (`syn/run_power_saif.tcl`, with the SAIF hooks now in the testbench) or
-  Quartus with `POWER_USE_INPUT_FILE VCD`. The activity numbers above are ratios,
-  not absolute power.
-- **Fmax.** The claim that the divider left the critical path rests on logic
-  depth, not on timing closure. `fpga/run_quartus.sh fit` will give a real Fmax
-  once Quartus is available.
+Power and Fmax are now measured on Cyclone IV GX. The headline is that **the
+MAC-column gating does not pay on FPGA**: +6.1% logic, −9.3% Fmax, and +1.2% to
++3.1% core dynamic power against the pre-optimisation build. Causes and the
+confidence caveat are in that file.
+
+The activity figures in this document are unaffected and stand. What changed is
+the interpretation of §2: the 87.2% enable duty is real, but on an FPGA the
+clock network is powered regardless, and the registers it gates were already
+conditionally written, so it converts to no saving on this target. It remains
+the right structure for an ASIC, which is untested.
+
+## 8. Still not measured
+
+- **ASIC power.** `syn/run_power_saif.tcl` and `syn/clock_gating_setup.tcl` are
+  ready; needs a PDK and Design Compiler.
+- **Combinational activity.** 99.2% of combinational nodes are estimated
+  vectorlessly from an RTL VCD, so the operand isolation's savings are not
+  observed. A post-fit gate-level sim in Questa would fix this and is the
+  outstanding question.
 - **Glitch power.** RTL simulation has no delays, so glitches are absent. A
   gate-level VCD would include them, and would also make the combinational
   divider's real cost visible.
