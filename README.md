@@ -1,213 +1,81 @@
-# Dual-Core Self-Attention Accelerator
+# CNN Hardware Accelerator
 
-An 8×8 MAC-array accelerator for self-attention inference, taped out through a
-65 nm ASIC flow as a UCSD ECE 260B project, with a low-power study covering
-clock gating, operand isolation and threshold-based compute skipping.
-
-> The foundry PDK is stripped and verified absent; see [NOTICE.md](NOTICE.md)
-> for provenance and attribution.
+A **Low Power 2D Systolic Array** based hardware accelerator designed for high-speed CNN inference.
 
 ---
 
-## What it computes
+## Training Results
 
-A two-core attention datapath. Each core holds Q and K vectors in local memory,
-streams Q through a weight-stationary 8×8 MAC array to produce Q·Kᵀ partial
-sums, then normalises them in a special-function unit. The two cores exchange
-row sums across a clock-domain crossing so normalisation can span both.
-
-```
-mem_in ─► qmem ─┐
-                ├─► mac_array (8 cols × 8 lanes, 8-bit) ─► ofifo ─► pmem
-        kmem ─┘                                                      │
-                                                                     ▼
-   ┌──────────────────────────── sfp_row ◄────────────────────────────┘
-   │   |x| ─► Σ ─► threshold skip ─► ÷ row-sum ─► sfp_out
-   │                    │
-   │              sum_out ─► async_gray_fifo ─► other core's sum_in
-   └── (mirrored in core 2)
-```
-
-| parameter | value |
-|---|---|
-| Datapath width | 8-bit operands, 20-bit partial sums |
-| Array | 8 columns × 8 parallel products per column |
-| Cores | 2, each with Q/K/psum memories and its own SFP |
-| Inter-core link | gray-code async FIFO + 2-flop synchronisers (`clk2` for core 2) |
-| Target clock | 100 MHz (10 ns), both flows |
-
-### Modules
-
-| file | role |
-|---|---|
-| `rtl/fullchip.v` | top level: two cores + the two CDC FIFOs |
-| `rtl/core.v` | one core: memories, array, output FIFO, SFP |
-| `rtl/mac_array.v` / `mac_col.v` / `mac_8in.v` | the systolic array; gating and operand isolation live in `mac_col.v` |
-| `rtl/sfp_row.v` | absolute value, row sum, runtime threshold skip, 8 dividers |
-| `rtl/seq_div.v` | sequential restoring divider, exact and short-path |
-| `rtl/async_gray_fifo.v` / `sync_mb.v` | clock-domain crossing |
-| `rtl/ofifo.v` / `fifo_depth16.v` / `fifo_mux_*.v` | output FIFO tree |
-| `rtl/sram_w16.v` | 16-entry memory, RAM-inferable |
-| `rtl/experimental/` | pipelined MAC variant, and the pre-optimisation baseline used for A/B |
+| Model | Accuracy | Quantization Error |
+| :--- | :--- | :--- |
+| **VGGNet** (4-bit act, 4-bit weights) | 90% | 3.9101e-07 |
+| **VGGNet** (2-bit act, 4-bit weights) | 90% | 5.5854e-07 |
 
 ---
 
-## Quick start — no licence required
+## Architecture Design
 
-Icarus Verilog and yosys are enough to verify the design and measure every
-optimisation in it.
+### Alpha 1: 2-bit/4-bit Array with OS/WS
 
-```sh
-make -C sim sim         # full chip, optimised   -> PASS: 16/16
-make -C sim baseline    # full chip, pre-optimisation
-make -C sim compare     # A/B their switching activity, like-for-like
-sim/sweep.sh            # sweep weight sparsity, re-verifying each point
-sim/sweep.sh --col      # same, for whole-column sparsity
-```
+The architecture provides flexibility to use higher or lower bit precisions and utilizes hardware efficiently on layers with fewer than 8 input channels through **Output Stationary (OS)** mapping.
 
-Unit tests:
+* **Weight Stationary (WS) Mode** (`mode_sel = 0`):
+    - **2-bit**: Loads weights into R/L registers over two phases.
+    - **4-bit**: Uses the same 2-bit MACs; MSBs are shifted by 2.
+* **Output Stationary (OS) Mode** (`mode_sel = 1`):
+    - **4-bit Default**: Each PE computes one output, accumulating until all channels finish.
+    - **2-bit**: Splits each PE into two 2-bit lanes, producing two outputs in parallel.
 
-```sh
-iverilog -g2012 -o /tmp/t tb/tb_seq_div.v rtl/seq_div.v            && vvp /tmp/t
-iverilog -g2012 -o /tmp/t tb/tb_cdc.v rtl/async_gray_fifo.v rtl/sync_mb.v && vvp /tmp/t
-iverilog -g2012 -o /tmp/t tb/tb_mac_pl.v rtl/experimental/mac_8in_pl.v rtl/mac_8in.v && vvp /tmp/t
-```
+### Alpha 2: Tiling on 2-bit WS
 
-`rtl/filelist.txt` is the single RTL list read by the simulation, synthesis and
-Quartus flows, so a module cannot be missing from one of them.
+- The **MAC array** handles 16 input by 8 output channels simultaneously.
+- Tiling for 16x16 channels is performed in the testbench by offsetting memory access in control registers.
+- Tiling capability extends to the combined 2/4-bit array with OS/WS functionality.
 
 ---
 
-## Results
+## Verification & Optimization
 
-Full tables: **[results/measurements.md](results/measurements.md)**.
+### Alpha 3: Random Stimulus Testbench
 
-| | |
-|---|---|
-| Verification | 16/16 full-chip vectors; 0 errors across the three unit tests |
-| Clock-gating ratio | **87.2%** of cycles with the MAC column enables low, uniform across all 16 columns |
-| MAC array activity | **−14.4%** vs. the pre-work design |
-| Divider | **3.0× fewer cells, 4.5× shorter logic depth** (1650 → 553 cells, ×16 instances) |
-| Memories | **9,216 flops → 6 inferred memories + 576 flops** |
-| Sparsity | array activity ratio falls to 0.90 at 90% whole-column weight sparsity |
+A robust verification environment using **C functions** to create random activations and calculate expected outputs based on given model weights. This is integrated into a **SystemVerilog testbench** for maximum coverage.
 
-Post-fit on Cyclone IV GX: **17,505 LEs, 9,634 registers, 9,216 block memory
-bits, 67.44 MHz, 174.16 mW core dynamic.** The design does **not** close at
-10 ns (−5.271 ns slack).
+### Alpha 4: Clock Gating & MAC Skipping
 
-**The MAC-column gating does not pay on this target** — against the
-pre-optimisation build it costs +6.1% logic, −9.3% Fmax and +1.2…3.1% core
-dynamic power. Full numbers, causes and the confidence caveat:
-**[results/fpga-quartus.md](results/fpga-quartus.md)**.
+MAC operations dominate dynamic power consumption (approximately 80%). To optimize efficiency:
 
-### The original power numbers were invalid
+* **Gated Clock**: Disables the MAC when either the activation or weight is zero; inputs and partial sums simply pass through.
+* **Results**: With 80% weight sparsity, **80% of MACs are skipped**, cutting dynamic power by **64%**.
+* **Power Efficiency**: Overall improvement of approximately **2.78x**.
 
-The pre-work synthesis reported an 80 mW gated build against a 6 mW ungated one.
-That comparison does not measure clock gating:
-
-- the gated netlist had two **unresolved black boxes** (134 `tri` nets), so most
-  of its "switching power" was the tool's default X-transition factor applied to
-  undriven high-fanout buses;
-- the two builds had **different core counts** (1 vs 2);
-- the final step was **never re-synthesised** — byte-identical outputs to the
-  previous step;
-- and both power engines ran **vectorless** — `Activity File: N.A.`,
-  `Sequential Element Activity: 0.200000`, `Default icg ratio: N.A.` — which
-  structurally cannot see a data-dependent saving.
-
-Worth reading if you have ever added zero-detect logic to a datapath and watched
-the power estimate go up: **[docs/clock-gating-power.md](docs/clock-gating-power.md)**.
-§7 explains why the same optimisation measured favourably on a Cyclone IV Quartus
-flow — Quartus was given a real VCD, so it was vector-based.
 
 ---
 
-## Flows
+## Performance and Synthesis
 
-### FPGA — Quartus (`fpga/`)
+### Alpha 5: Mapping ResNet
 
-```sh
-make -C sim vcd                  # activity data for the power analyser
-fpga/run_quartus.sh syn          # analysis + synthesis
-fpga/run_quartus.sh fit          # + fitter and timing
-fpga/run_quartus.sh power        # power analysis, VCD-annotated
-```
+Testing on **ResNet20** (Layer 3 to 8) showed lower tolerance to channel bottlenecking compared to VGGNet:
 
-Targets Cyclone IV E `EP4CE115F29C7`. The core has ~800 ports, so all but `clk`,
-`clk2` and `reset` are assigned `VIRTUAL_PIN`; `fpga/gen_qsf.py` regenerates the
-project from `rtl/filelist.txt` and the port list. `run_quartus.sh` stages onto
-the Windows filesystem first, because Quartus is a Windows binary and cannot
-follow WSL paths.
+- **4-bit Model**: 86.58% accuracy (3e-6 error).
+- **2-bit Model**: 73.25% accuracy (1e-6 error).
 
-The `.qsf` sets `POWER_USE_INPUT_FILE VCD` so the Power Analyzer uses real toggle
-rates rather than its 12.5% default, and leaves `AUTO_CLOCK_ENABLE_RECOGNITION`
-on — register clock-enable is the FPGA equivalent of an ICG, and a hand-built
-gated clock on Cyclone IV is actively harmful. See
-[docs/clock-gating-power.md](docs/clock-gating-power.md) §7.
+### Alpha 6: FPGA Synthesis Results
 
-All RTL is plain Verilog-2005 — the SystemVerilog packed array that previously
-forced `sfp_row.v` to be read as SystemVerilog is gone, which is also what made
-it an unresolved black box under `analyze -format verilog`.
+The design was synthesized on a **Cyclone IV FPGA**.
 
-**Tooling status:** Quartus Standard 23.1's 30-day evaluation has expired and the
-two Quartus Lite trees under `/mnt/c/intelFPGA_lite` contain device files but no
-executables. Quartus Prime Lite needs no licence and does not expire; set
-`QUARTUS_ROOT` if it installs somewhere other than the default.
-
-### ASIC — Design Compiler + Innovus (`syn/`, `pnr/`)
-
-Retained because they document how the original results were produced, and they
-still run against your own PDK. The technology is referenced only through
-environment variables, so nothing proprietary is in the repository:
-
-```sh
-export PDK_ROOT=/path/to/pdk
-export STDCELL_DB=$PDK_ROOT/db/<worst_case_lib>.db
-export DESIGN_DATA=/path/to/designdata
-export STDCELL_LIB_BC=<best_lib>  STDCELL_LIB_WC=<worst_lib>
-export STDCELL_LEF=<lef_basename>
-export CAPTBL_BEST=<best.captable> CAPTBL_WORST=<worst.captable>
-
-cd syn && dc_shell-xg-t -f run_dc.tcl
-```
-
-| script | purpose |
-|---|---|
-| `syn/run_dc.tcl` | synthesis; reads `rtl/filelist.txt`, exits non-zero on any unmapped block or `tri` net |
-| `syn/run_power_saif.tcl` | **activity-annotated** power, and refuses to report if any block is a black box |
-| `syn/clock_gating_setup.tcl` | tool-inferred integrated clock gaters, to replace the hand-rolled latch+AND |
-| `sim/gen_saif.md` | how to produce the SAIF / VCD both flows want |
+| Metric | 4-bit act. WS (Pt 1) | Alpha 1 (Final Design) |
+| :--- | :--- | :--- |
+| **Total Ops / Cycle** | 128 | 256 |
+| **Frequency** | 129.82 MHz | 93.46 MHz |
+| **Logic Elements** | 16,681 (11%) | 30,889 (21%) |
+| **Registers** | 11,936 | 15,802 |
+| **Dynamic Power** | 172 mW | 173 mW |
+| **Performance (TOPs)** | 16.6 GOPS | 23.9 GOPS |
+| **Efficiency (TOPs/W)** | 96.6 GOPS/W | **138 GOPS/W** |
 
 ---
 
-## Where to go next
+## Conclusion
 
-[docs/extensions.md](docs/extensions.md) tracks status. What remains:
-
-1. **Power and Fmax.** `fpga/run_quartus.sh power` and `... fit`. The tool side is
-   configured; only the tool is missing. Fmax also decides whether the pipelined
-   MAC variant is worth adopting.
-2. **Synchronise the instruction bus into core 2.** `fullchip` now takes `clk2`
-   and the row-sum FIFOs cross domains correctly, but `inst` is driven in the
-   `clk` domain and read by both cores, so `clk2` must still be tied to `clk`.
-   A command FIFO reusing `async_gray_fifo` is the obvious route.
-3. **Gate-level activity.** RTL simulation has no delays, so glitch power is
-   absent and large combinational blocks are undercounted.
-4. **Shift-based normalisation**, if the accuracy cost measures acceptable
-   against the testbench's reference model.
-
----
-
-## Layout
-
-```
-rtl/          synthesisable RTL (technology-independent)
-  experimental/   pipelined MAC, and pre-optimisation baseline for A/B
-tb/           testbench + generated stimulus in tb/data/
-sim/          licence-free flow: Makefile, VCD activity analyser, stimulus
-              generator, sparsity sweep, SAIF notes
-fpga/         Quartus project, constraints, WSL run wrapper
-syn/ pnr/     ASIC scripts, PDK referenced via environment variables
-docs/         clock-gating post-mortem, extension backlog
-results/      measured activity, area and sparsity tables
-```
+The final design (Alpha 1) observed a **43% increase** in both TOPs and TOPs/W efficiency.
