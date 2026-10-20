@@ -19,6 +19,18 @@ generalises.
 
 ## 1. What the original reports actually said
 
+**Scope.** This section covers the **ASIC Design Compiler** reports in the course
+repository: `syn/log/fullchip_power.rep`, TSMC 65 nm `tcbn65gpluswc`, pre-layout,
+10 ns clock. The `step5_clock_gating` build in that repository is the **Alpha 5**
+design (latch-based instruction gating and two-level operand isolation). The course
+team removed Alpha 5 before its final step 5 build.
+
+The course final report gives different ASIC numbers: Innovus post-route, dual-core,
+1 ns target, 65.03 mW (step 4) → 48.30 mW (step 5, pipelined MAC and divider
+multicycle path). That is another tool, clock and netlist, and this document does
+not analyse it. See the README's ASIC section. FPGA numbers are in section 7 and in
+[../results/fpga-quartus.md](../results/fpga-quartus.md).
+
 | build | config | dynamic | internal | switching | leakage |
 |---|---|---:|---:|---:|---:|
 | `step4` (no gating) | 1 core | 6.06 mW | 5.94 mW (98%) | 0.12 mW (2%) | 1.10 mW |

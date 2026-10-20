@@ -4,6 +4,11 @@ Everything here is reproducible without a licensed tool: Icarus Verilog for
 simulation, `sim/vcd_activity.py` for switching activity, yosys for area and
 logic depth.
 
+**Target: none.** These are RTL and technology-independent measurements: bit
+transitions from simulation, and yosys generic-cell counts and logic depth. They
+are not ASIC or FPGA power. FPGA power is in [fpga-quartus.md](fpga-quartus.md).
+The 65 nm ASIC numbers describe the course RTL, not this RTL; see the README.
+
 ```sh
 make -C sim compare      # activity A/B
 sim/sweep.sh             # sparsity sweep

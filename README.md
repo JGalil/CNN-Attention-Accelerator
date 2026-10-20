@@ -1,8 +1,14 @@
 # Dual-Core Self-Attention Accelerator
 
 An 8×8 MAC-array accelerator for self-attention inference, built for UCSD ECE 260B.
-The design was taken to GDS in a 65 nm Design Compiler + Innovus flow. It includes a
-low-power study of clock gating, operand isolation and threshold-based compute skipping.
+The course version was taken to GDS in a TSMC 65 nm Design Compiler + Innovus flow.
+The RTL in this repository has since been reworked and re-measured with Icarus
+Verilog, yosys and Quartus (Cyclone IV FPGA). The reworked RTL has **not** been
+through the 65 nm ASIC flow. It includes a low-power study of clock gating, operand
+isolation and threshold-based compute skipping.
+
+ASIC and FPGA numbers are not comparable. Each figure below states its target. See
+[Where the numbers come from](#where-the-numbers-come-from).
 
 > The foundry PDK is stripped and verified absent. See [NOTICE.md](NOTICE.md) for
 > provenance and attribution.
@@ -34,7 +40,7 @@ mem_in ─► qmem ─┐
 | Array | 8 columns × 8 parallel products per column |
 | Cores | 2, each with Q/K/psum memories and its own SFP |
 | Inter-core link | gray-code async FIFO + 2-flop synchronisers (`clk2` for core 2) |
-| Clock constraint | 10 ns in every flow |
+| Clock constraint | 10 ns in simulation, Quartus and `syn/`; 1 ns in `pnr/` and in the course 65 nm P&R |
 
 ### Modules
 
@@ -82,16 +88,33 @@ iverilog -g2012 -o /tmp/t tb/tb_mac_pl.v rtl/experimental/mac_8in_pl.v rtl/mac_8
 Full tables are in [results/measurements.md](results/measurements.md) (RTL activity,
 area, sparsity) and [results/fpga-quartus.md](results/fpga-quartus.md) (post-fit).
 
+### Where the numbers come from
+
+| source | target | tool | clock | RTL | activity | in this repo |
+|---|---|---|---|---|---|---|
+| RTL measurements (table below) | none (technology-independent) | Icarus Verilog, yosys generic `synth` | 10 ns testbench | this repo | real VCD | yes |
+| [FPGA post-fit](#fpga-cyclone-iv-post-fit) | **FPGA**, Cyclone IV GX | Quartus Prime Lite 25.1 | 10 ns | this repo | VCD for registers; 99.2% of combinational nodes vectorless | yes |
+| [Course final report](#asic-65-nm-course-project-numbers) | **ASIC**, TSMC 65 nm, worst-case library | Innovus post-route | 1 ns | course RTL, before the rework | Innovus default (see below) | no; reports stayed on the course server |
+| [Course DC reports](#asic-65-nm-course-project-numbers) | **ASIC**, TSMC 65 nm, `tcbn65gpluswc` | Design Compiler, pre-layout | 10 ns | course RTL, before the rework | vectorless | no; `syn/log/` of the course repo |
+
+The rework and the ASIC numbers do not overlap. The 65 nm figures describe the
+course RTL. The FPGA and RTL figures describe this repository's RTL. No figure
+measures the reworked RTL on an ASIC.
+
+### RTL measurements
+
+Technology-independent: Icarus activity counts and yosys generic cells. Neither is power.
+
 | | |
 |---|---|
 | Verification | 16/16 full-chip vectors (optimised and baseline); 0 errors across the three unit tests |
 | Clock-gating opportunity | MAC column enables low **87.2%** of cycles, uniform across all 16 columns |
 | MAC array activity | **−14.4%** vs. the pre-optimisation design |
-| Divider | **3.0× fewer cells, 4.5× shorter logic depth** (1,650 → 553 cells, ×16 instances) |
+| Divider | **3.0× fewer cells, 4.5× shorter logic depth** (1,650 → 553 yosys cells, ×16 instances) |
 | Memories | **9,216 flops → 6 inferred memories + 576 flops** |
 | Sparsity | array activity ratio 0.896 at 90% whole-column weight sparsity |
 
-### FPGA, post-fit
+### FPGA (Cyclone IV), post-fit
 
 Quartus Prime Lite 25.1std, Cyclone IV GX `EP4CGX150DF31I7AD`, slow 1200 mV / 100 °C model:
 
@@ -110,12 +133,44 @@ Neither build closes at 10 ns; the optimised build has −5.271 ns worst setup s
 register enables, and the gated registers already had conditional writes.
 [fpga-quartus.md](results/fpga-quartus.md) covers the causes and the confidence
 caveat: 99.2% of combinational nodes were annotated vectorlessly. The ASIC case
-depends on clock-tree power and integrated clock-gating cells, and is untested.
+depends on clock-tree power and integrated clock-gating cells. It is untested for
+this repository's RTL.
 
-### The original 65 nm power numbers were invalid
+### ASIC (65 nm), course project numbers
 
-The course flow reported 80 mW for the gated build against 6 mW ungated. That
-comparison does not measure clock gating:
+These numbers come from the course version of the design, before the rework in this
+repository. They are ASIC numbers. Do not compare them with the FPGA figures above.
+
+**Innovus post-route, from the course final report.** Dual-core chip, TSMC 65 nm,
+worst-case library, 1 ns clock target:
+
+| build | contents | area | power | WNS at 1 ns |
+|---|---|---:|---:|---:|
+| step 4 | dual-core baseline | 5,869,397.72 µm² | **65.03 mW** | −2.773 ns |
+| step 5 | + divider multicycle path (4 cycles), 3-stage pipelined MAC with instruction-tracking clock gating | 6,308,355.04 µm² | **48.30 mW** | −1.337 ns |
+
+- Power falls **25.7%** and area rises **7.5%**. The report attributes most of the
+  saving to combinational power, which falls from 34 mW to 16.13 mW. Once the
+  pipelined MAC left the critical path, the tool could use smaller cells.
+- **Neither build closes timing at 1 ns.** The power is computed at the 1 GHz
+  target, not at the speed the routed design reaches. The report gives 0 WNS at
+  1.1 GHz worst case and 2.1 GHz typical, but for **synthesis** only. Post-route,
+  the critical path is the multicycle divider.
+- The step 1 and step 3 Innovus reports in the course repository are vectorless
+  (`Activity File: N.A.`, 0.2 default activity). The step 4 and step 5 reports are
+  not in that repository, so their activity setting cannot be confirmed here. The
+  final report states that power over the full 186 ns testbench is about 50 mW,
+  close to the Innovus figure.
+- Step 6 (threshold skip) was routed only at 10 ns: 54.89 mW, WNS +0.005 ns. It
+  is not comparable with steps 4 and 5.
+- Alpha 5 (latch-based instruction gating and two-level operand isolation) was
+  removed before the final step 5 build. The rework in this repository replaces
+  that gater with a register enable. See
+  [docs/clock-gating-power.md](docs/clock-gating-power.md).
+
+**Design Compiler, pre-layout, from the course repository** (`syn/log/fullchip_power.rep`,
+10 ns). These numbers are not valid. DC reported 80.03 mW for the step 5 (Alpha 5)
+gated build against 6.06 mW for step 4. That comparison does not measure clock gating:
 
 - the gated netlist had two **unresolved black boxes** (134 `tri` nets), so most
   of its switching power was the default X-transition factor applied to undriven
@@ -126,7 +181,9 @@ comparison does not measure clock gating:
 - both power engines ran **vectorless** (`Activity File: N.A.`,
   `Default icg ratio: N.A.`), which cannot see a data-dependent saving.
 
-Full write-up: [docs/clock-gating-power.md](docs/clock-gating-power.md).
+The DC numbers are a different measurement from the Innovus numbers above: a
+different tool, a different clock, and a stale netlist. Full write-up:
+[docs/clock-gating-power.md](docs/clock-gating-power.md).
 
 ---
 
@@ -159,9 +216,13 @@ VARIANT=baseline fpga/run_quartus.sh all  # pre-optimisation mac_col / mac_8in
 
 ### ASIC: Design Compiler + Innovus (`syn/`, `pnr/`)
 
-These are the scripts that produced the original 65 nm results. They still run
-against your own PDK. The technology is referenced only through environment
-variables:
+These scripts are adapted from the course flow that produced the 65 nm results. They
+have not been re-run on the reworked RTL. They still run against your own PDK. The
+technology is referenced only through environment variables.
+
+`pnr/constraints/fullchip.sdc` keeps the course settings: a 1 ns clock, and multicycle
+paths (4 setup, 3 hold) into `mc_div_instance`. `seq_div` has replaced `mc_div`, so
+those multicycle paths match no cells. Update the SDC before you use it on this RTL.
 
 ```sh
 export PDK_ROOT=/path/to/pdk
@@ -197,8 +258,10 @@ Status is tracked in [docs/extensions.md](docs/extensions.md).
 3. **Gate-level activity.** RTL simulation has no delays, so glitch power is
    missing and large combinational blocks are undercounted.
 4. **Pipelined MAC.** `rtl/experimental/mac_col_pipelined.v` is verified but not
-   adopted. The worst FPGA setup path runs from a MAC column into the output FIFO
-   (`mac_col.key_zero_q` → `ofifo`, −5.271 ns), so this is the next timing lever.
+   adopted here. (The course step 5 ASIC build did use a pipelined MAC; see the
+   ASIC section.) The worst FPGA setup path runs from a MAC column into the output
+   FIFO (`mac_col.key_zero_q` → `ofifo`, −5.271 ns), so this is the next timing
+   lever.
 5. **Shift-based normalisation**, if its accuracy cost is acceptable against the
    testbench's reference model.
 
